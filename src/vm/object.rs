@@ -29,7 +29,7 @@ impl ObjectPtr {
         unsafe {
             let header: &ObjectHeader = &*self.ptr.cast();
 
-            ClassRef(header.class)
+            ClassRef::new(header.class)
         }
     }
 

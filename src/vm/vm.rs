@@ -32,14 +32,14 @@ impl VM {
             object_arena: Default::default(),
             string_pool: Default::default(),
 
-            classloader: ClassRef(null()),
-            string_class: ClassRef(null())
+            classloader: ClassRef::new(null()),
+            string_class: ClassRef::new(null())
         };
 
         vm.load_bootstrap_classes();
 
-        vm.classloader = ClassRef(&*vm.classes.lock().unwrap()[1]);
-        vm.string_class = ClassRef(&*vm.classes.lock().unwrap()[2]);
+        vm.classloader = ClassRef::new(&*vm.classes.lock().unwrap()[1]);
+        vm.string_class = ClassRef::new(&*vm.classes.lock().unwrap()[2]);
 
         vm
     }

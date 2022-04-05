@@ -2,7 +2,7 @@ use std::fmt::{Debug, Formatter};
 use smallvec::SmallVec;
 use crate::vm::class::field::FieldType;
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct MethodDescriptor {
     pub parameters: Vec<FieldType>,
     pub ret: FieldType

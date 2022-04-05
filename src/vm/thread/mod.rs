@@ -1,2 +1,2 @@
 pub mod thread;
-mod frame;
+pub mod frame;

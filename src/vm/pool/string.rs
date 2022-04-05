@@ -25,7 +25,7 @@ impl StringPool {
     pub fn add_string(&self, value: &str) -> ObjectPtr {
         let mut pool = self.pool.write().unwrap();
         let mut string_object = StringObject {
-            header: ObjectHeader { class: VM_HANDLER.get().unwrap().string_class.0 },
+            header: ObjectHeader { class: VM_HANDLER.get().unwrap().string_class.ptr() },
             data: [pool.len() as u64],
             string: value.to_string()
         };

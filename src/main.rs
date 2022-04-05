@@ -11,6 +11,7 @@ use crate::vm::vm::VM;
 
 mod class_parser;
 mod vm;
+mod helper;
 
 static VM_HANDLER: OnceCell<VM> = OnceCell::new();
 
@@ -30,13 +31,22 @@ fn main() {
             let class = unsafe { ptr.read() };
             println!("Loaded: {:#?}", class);
 
+            let clinit_method = class.data.methods.iter().enumerate().find(|&m| match m {
+                (i, Method::Jvm(method)) => method.name == "<clinit>",
+                _ => false
+            });
+
+            if let Some((i, method)) = clinit_method {
+                thread.start((ClassRef::new(ptr), i), smallvec![]);
+            }
+
             let main_method = class.data.methods.iter().enumerate().find(|&m| match m {
                 (i, Method::Jvm(method)) => method.name == "main",
                 _ => false
             });
 
             if let Some((i, method)) = main_method {
-                thread.start((ClassRef(ptr), i), smallvec![]);
+                thread.start((ClassRef::new(ptr), i), smallvec![]);
             }
         }
     });

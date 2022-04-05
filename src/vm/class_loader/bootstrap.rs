@@ -1,20 +1,22 @@
+use std::cell::UnsafeCell;
 use std::fs::File;
 use std::io::ErrorKind::ConnectionAborted;
 use std::io::Read;
 use std::ops::Deref;
 use std::path::PathBuf;
 use std::ptr::{null, null_mut};
-use std::sync::Mutex;
-use smallvec::smallvec;
+use std::sync::{Mutex, RwLock};
+use std::sync::atomic::AtomicU64;
+use smallvec::{smallvec, SmallVec};
 use crate::{Class, ClassRepr, get_cp_info, Method, ObjectHeader, VM, VM_HANDLER, VMThread};
 use crate::class_parser::constants::CPInfo;
 use crate::class_parser::parse_class;
 use crate::class_parser::types::ParsedClass;
 use crate::class_parser::constants::CPTag;
-use crate::vm::class::class::ClassRef;
+use crate::vm::class::class::{ClassRef, ClassState};
 use crate::vm::class::constant_pool::{CPEntry, UnresolvedReference};
 use crate::vm::class::constant_pool::CPEntry::{ConstantString, ConstantValue, UnresolvedSymbolicReference};
-use crate::vm::class::field::FieldType;
+use crate::vm::class::field::{Field, FieldType};
 use crate::vm::class::method::{Code, JvmMethod, MethodDescriptor, NativeMethod};
 use crate::vm::object::ObjectPtr;
 use crate::vm::pool::string::StringObject;
@@ -31,7 +33,7 @@ impl VM {
         classes.push(pin);
         classes.last_mut().unwrap().header.class = &**classes.last().unwrap();
 
-        ClassRef(&**classes.last_mut().unwrap())
+        ClassRef::new(&**classes.last_mut().unwrap())
     }
 
     pub fn load_bootstrap_classes(&mut self) {
@@ -40,9 +42,10 @@ impl VM {
         let object_name = "java/lang/Object".to_string();
         let object_class_data = Class {
             header: ObjectHeader { class: zero_ptr },
+            state: ClassState::Loaded,
             data: ClassRepr {
                 name: object_name.clone(),
-                superclass: ClassRef(zero_ptr),
+                superclass: ClassRef::new(zero_ptr),
                 interfaces: Default::default(),
                 constant_pool: vec![],
                 fields: vec![],
@@ -61,6 +64,7 @@ impl VM {
         let classloader_name = "java/lang/ClassLoader".to_string();
         let classloader_class_data = Class {
             header: ObjectHeader { class: zero_ptr },
+            state: ClassState::Loaded,
             data: ClassRepr {
                 name: classloader_name.clone(),
                 superclass: object_class,
@@ -81,7 +85,7 @@ impl VM {
                         let res = vm.load_class(string);
 
                         match res {
-                            Ok(val) => Some(val.0 as u64),
+                            Ok(val) => Some(val.ptr() as u64),
                             Err(e) => {
                                 *exc = Some(e);
                                 None
@@ -103,6 +107,7 @@ impl VM {
         let string_name = "java/lang/String".to_string();
         let string_class_data = Class {
             header: ObjectHeader { class: zero_ptr },
+            state: ClassState::Loaded,
             data: ClassRepr {
                 name: string_name.clone(),
                 superclass: object_class,
@@ -142,6 +147,12 @@ impl VM {
         println!("Loaded class file {:?}", name);
 
         let class = self.derive_class(ObjectPtr::null(), name, &mut buf)?;
+
+        {
+            let mut class_list = self.bootstrap_cl_class_list.lock().unwrap();
+            class_list.insert(class.data.name.clone(),
+                              class);
+        }
 
         Ok(class)
     }
@@ -261,12 +272,33 @@ impl VM {
         Ok(())
     }
 
+    fn load_fields(parsed_class: &ParsedClass, fields: &mut Vec<Field>) -> Result<(), Exception> {
+        for f in &parsed_class.fields {
+            let name = get_cp_info!(parsed_class, f.name_index, CPTag::Utf8, CPInfo::Utf8(str),
+                        str)?.clone();
+            let descriptor = get_cp_info!(parsed_class, f.descriptor_index, CPTag::Utf8,
+                CPInfo::Utf8(str), str)?;
+            let descriptor = FieldType::parse(descriptor)
+                .ok_or(format!("Could not parse field descriptor {}", descriptor))?;
+
+            fields.push(Field {
+                flag: f.access_flags,
+                name,
+                descriptor
+            })
+        }
+
+        Ok(())
+    }
+
     pub fn derive_class(&self, class_loader: ObjectPtr, name: &str, buf: &[u8]) ->
                                                                                  Result<ClassRef, Exception> {
         let parsed_class = parse_class(buf).map_err(|e| e.to_string())?;
 
         let mut constant_pool = vec![];
         VM::load_cp_entries(&parsed_class, &mut constant_pool)?;
+        let mut constant_pool: Vec<UnsafeCell<CPEntry>> = constant_pool.iter().map(|e|
+            UnsafeCell::new(e.clone())).collect();
 
         let this_class = get_cp_info!(parsed_class, parsed_class.this_class, CPTag::Class,
             CPInfo::Class(num), *num)?;
@@ -287,27 +319,37 @@ impl VM {
         let mut superclass: ClassRef;
 
         match thread.status {
-            FINISHED(Some(class)) => superclass = ClassRef(class as *const Class),
+            FINISHED(Some(class)) => superclass = ClassRef::new(class as *const Class),
             ThreadStatus::FAILED(e) => return Err(e),
             _ => panic!("Can't happen")
         }
 
         // println!("{:#?}", constant_pool);
-        println!("{:?}", unsafe {&*superclass.0});
+        println!("{:?}", *superclass);
 
-        let mut methods = Vec::with_capacity(parsed_class.methods.len() as usize);
+        let mut methods = Vec::with_capacity(parsed_class.methods.len());
         VM::load_methods(&parsed_class, &mut methods)?;
+
+        let mut fields = Vec::with_capacity(parsed_class.fields.len());
+        VM::load_fields(&parsed_class, &mut fields)?;
+
+        let static_field_count = fields.iter().filter(|f| f.is_static()).count();
+        let mut static_fields = SmallVec::with_capacity(static_field_count);
+        for _ in 0..static_field_count {
+            static_fields.push(AtomicU64::new(0));
+        }
 
         let class = Class {
             header: ObjectHeader { class: null() },
+            state: ClassState::Loaded,
             data: ClassRepr {
                 name: class_name.clone(),
                 superclass,
                 interfaces: Default::default(),
                 constant_pool,
-                fields: vec![],
+                fields,
                 methods,
-                static_fields: Default::default()
+                static_fields
             }
         };
 

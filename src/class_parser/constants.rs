@@ -107,7 +107,7 @@ pub enum CPInfo {
     Hole, // Used for marking an empty slot in the constant pool (for long, double)
 }
 
-/*pub enum AccessFlagClass {
+pub enum AccessFlagClass {
     ACC_PUBLIC = 0x0001,
     ACC_FINAL = 0x0010,
     ACC_SUPER = 0x0020,
@@ -146,4 +146,4 @@ pub enum AccessFlagMethod {
     ACC_ABSTRACT = 0x0400,
     ACC_STRICT = 0x0800,
     ACC_SYNTHETIC = 0x1000,
-}*/
+}
