@@ -1,5 +1,7 @@
 use std::fmt::{Debug, Formatter};
 use std::mem::MaybeUninit;
+use smallvec::{SmallVec, smallvec};
+use crate::vm::class::method::MAX_NO_OF_ARGS;
 
 const MAX_FRAME_SIZE: usize = 125;
 
@@ -10,7 +12,7 @@ pub struct Frame {
     stack_size: usize,
     stack_top: usize,
 
-    data: [MaybeUninit<u64>; MAX_FRAME_SIZE],
+    data: [MaybeUninit<u64>; MAX_FRAME_SIZE]
 }
 
 impl Debug for Frame {
@@ -80,6 +82,24 @@ impl Frame {
 
         self.stack_top -= 1;
         unsafe { self.data[self.stack_top].assume_init() }
+    }
+
+    pub fn safe_peek(&self) -> Option<u64> {
+        if self.stack_top > self.local_array_size {
+            Some(unsafe { self.data[self.stack_top-1].assume_init() })
+        } else {
+            None
+        }
+    }
+
+    pub fn pop_args(&mut self, no_of_args: usize) -> SmallVec<[u64; MAX_NO_OF_ARGS]> {
+        let slice = unsafe { std::mem::transmute::<&[MaybeUninit<u64>], &[u64]>(
+            &self.data[self.stack_top-no_of_args..self.stack_top]) };
+        let args = SmallVec::from_slice(slice);
+
+        self.stack_top -= no_of_args;
+
+        args
     }
 }
 

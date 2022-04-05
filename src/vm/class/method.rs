@@ -1,3 +1,5 @@
+use std::fmt::{Debug, Formatter};
+use smallvec::SmallVec;
 use crate::vm::class::field::FieldType;
 
 #[derive(Debug, PartialEq)]
@@ -7,10 +9,30 @@ pub struct MethodDescriptor {
 }
 
 #[derive(Debug)]
-pub struct Method {
+pub enum Method {
+    Jvm(JvmMethod),
+    Native(NativeMethod)
+}
+
+#[derive(Debug)]
+pub struct JvmMethod {
     pub name: String,
     pub descriptor: MethodDescriptor,
     pub code: Option<Code>,
+}
+
+pub const MAX_NO_OF_ARGS: usize = 64;
+
+type NativeFnPtr = fn(SmallVec<[u64; MAX_NO_OF_ARGS]>, exception: &mut Option<String>) -> Option<u64>;
+
+pub struct NativeMethod {
+    pub fn_ptr: NativeFnPtr
+}
+
+impl Debug for NativeMethod {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.fn_ptr as usize)
+    }
 }
 
 #[derive(Debug)]

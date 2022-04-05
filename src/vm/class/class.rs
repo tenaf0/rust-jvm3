@@ -25,8 +25,8 @@ pub struct ClassRepr {
     pub superclass: ClassRef,
     pub interfaces: SmallVec<[ClassRef; 32]>,
     pub constant_pool: Vec<CPEntry>,
-    pub field_info: Vec<Field>,
-    pub method_info: Vec<Method>,
+    pub fields: Vec<Field>,
+    pub methods: Vec<Method>,
     // TODO: attributes
     pub static_fields: SmallVec<[u64; 32]>
 }
@@ -34,3 +34,6 @@ pub struct ClassRepr {
 /// Concrete type used as "pointer" to a Class instance
 #[derive(Copy, Clone, Debug)]
 pub struct ClassRef(pub *const Class);
+
+unsafe impl Sync for ClassRef {}
+unsafe impl Send for ClassRef {}

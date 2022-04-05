@@ -1,60 +1,70 @@
+use std::cmp::max;
 use std::pin::Pin;
 use std::process::exit;
 use smallvec::{SmallVec, smallvec};
 use crate::Class;
+use crate::vm::class::class::ClassRef;
+use crate::vm::class::method::{MAX_NO_OF_ARGS, Method};
 use crate::vm::instructions::Instruction;
 use crate::vm::thread::frame::Frame;
-use crate::vm::thread::thread::ThreadStatus::{RUNNING, STOPPED};
+use crate::vm::thread::thread::ThreadStatus::{FAILED, FINISHED, RUNNING};
 
-const MAX_NO_OF_ARGS: usize = 32;
+pub type MethodRef = (ClassRef, usize);
 
-type NativeFnPtr = fn(SmallVec<[u64; MAX_NO_OF_ARGS]>, exception: &mut Option<String>) ->
-                                                                                       Option<u64>;
-// TODO: Think about return type, args could be a single pointer to the previous frame's
-pub enum MethodRef<'a> {
-    JVMMethod(&'a Pin<Box<Class>>, usize),
-    NativeMethod(NativeFnPtr)
-}
-
-const STACK_SIZE: usize = 128;
+const STACK_SIZE: usize = 36;
 
 pub enum ThreadStatus {
     RUNNING,
-    STOPPED
+    FINISHED(Option<u64>),
+    FAILED(String)
 }
 
 pub struct VMThread {
-    status: ThreadStatus,
+    pub status: ThreadStatus,
     stack: SmallVec<[Frame; STACK_SIZE]>
 }
 
 impl VMThread {
     pub fn new() -> VMThread {
         VMThread {
-            status: STOPPED,
+            status: FINISHED(None),
             stack: Default::default()
         }
     }
 
-    pub fn start(&mut self, method_ref: MethodRef) {
-        let mut frame = Frame::new(0, 1); // TODO: Passed arguments
+    pub fn start(&mut self, method_ref: MethodRef, args: SmallVec<[u64; MAX_NO_OF_ARGS]>) {
+        let arg_no = args.len();
+        let mut frame = Frame::new(0, max(arg_no, 1));
+        for arg in args {
+            frame.push(arg);
+        }
 
         self.status = RUNNING;
-        self.method(method_ref, &mut frame);
+        println!("Thread started method: {:?}", method_ref);
+        self.method(method_ref, &mut frame, arg_no);
         if frame.exception.is_none() {
-            self.status = STOPPED;
+            self.status = FINISHED(frame.safe_peek());
+
+            println!("Thread finished execution with return value: {:?}", frame.safe_peek());
         } else {
-            panic!("Thread exited with exception")
+            let string = frame.exception.unwrap();
+            eprintln!("Thread exited with exception: {}", string.clone());
+
+            self.status = FAILED(string);
         }
     }
 
-    fn method(&mut self, method_ref: MethodRef, prev_frame: &mut Frame) {
-        match method_ref {
-            MethodRef::JVMMethod(class, method) => {
-                let method = &class.data.method_info[method];
+    fn method(&mut self, method_ref: MethodRef, prev_frame: &mut Frame, arg_no: usize) {
+        let (class, method) = method_ref;
+        let class = unsafe { &*class.0 };
+        let method = &class.data.methods[method];
+
+        match method {
+            Method::Jvm(method) => {
                 if let Some(code) = &method.code {
-                    let frame = Frame::new(code.max_locals, code.max_stack);
+                    let mut frame = Frame::new(code.max_locals, code.max_stack);
                     self.stack.push(frame);
+                    let args = prev_frame.pop_args(arg_no);
                     // TODO: Copy method args
 
                     let frame = self.stack.last_mut().unwrap();
@@ -68,6 +78,13 @@ impl VMThread {
                             let instruction = Instruction::try_from(instr).unwrap();
                             println!("{:?}", instruction);
                             match instruction {
+                                iconst_m1 | iconst_0 | iconst_1 | iconst_2 | iconst_3 | iconst_4
+                                | iconst_5 => {
+                                    let val = instr as isize - 3;
+                                    frame.push(val as u64);
+
+                                    frame.pc += 1;
+                                }
                                 bipush => {
                                     let val = code.code[frame.pc + 1];
                                     frame.push(val as u64);
@@ -130,9 +147,11 @@ impl VMThread {
                     panic!("Executing method without code!");
                 }
             },
-            MethodRef::NativeMethod(fn_ptr) => {
-                let args = smallvec![];
-                let res = fn_ptr(args, &mut prev_frame.exception);
+            Method::Native(method) => {
+                let fn_ptr = method.fn_ptr;
+                let args = prev_frame.pop_args(arg_no);
+                let exception = &mut prev_frame.exception;
+                let res = fn_ptr(args, exception);
 
                 match res {
                     Some(res) if prev_frame.exception.is_none() => prev_frame.push(res),

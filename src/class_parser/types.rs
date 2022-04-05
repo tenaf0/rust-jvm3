@@ -33,18 +33,13 @@ pub struct AttributeInfo {
 pub struct ParsedClass {
     pub minor_version: U2,
     pub major_version: U2,
-    pub constant_pool_count: U2,
     pub constant_pool: Vec<CPInfo>, // of length constant_pool_count-1
     pub access_flags: U2,
     pub this_class: U2,
     pub super_class: U2,
-    pub interfaces_count: U2,
     pub interfaces: Vec<U2>, // of length interfaces_count
-    pub fields_count: U2,
     pub fields: Vec<FieldInfo>, // of length fields_count
-    pub methods_count: U2,
     pub methods: Vec<MethodInfo>, // of length methods_count
-    pub attributes_count: U2,
     pub attributes: Vec<AttributeInfo>, // of length attributes_count
 }
 
@@ -64,8 +59,8 @@ impl ParsedClass {
 macro_rules! get_cp_info {
     ($parsed_class: ident, $ind: expr, $tag: expr, $pat: pat, $param: expr) => {{
         let temp_cp_info = $parsed_class.get_cp_info_raw($ind, $tag)
-                        .ok_or((ClassFormatError, format!("Format error at constant pool item {}",
-                                                          $ind)));
+                        .ok_or(format!("Format error at constant pool item {}",
+                                                          $ind));
         match temp_cp_info {
             Ok(ok) => match ok {
                 $pat => Ok($param),

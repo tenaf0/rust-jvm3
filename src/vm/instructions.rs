@@ -3,6 +3,13 @@ use num_enum::TryFromPrimitive;
 #[derive(TryFromPrimitive, Debug)]
 #[repr(u8)]
 pub enum Instruction {
+    iconst_m1 = 2,
+    iconst_0 = 3,
+    iconst_1 = 4,
+    iconst_2 = 5,
+    iconst_3 = 6,
+    iconst_4 = 7,
+    iconst_5 = 8,
     bipush = 16,
     sipush = 17,
     ldc2_w = 20,

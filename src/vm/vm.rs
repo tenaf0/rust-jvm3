@@ -1,50 +1,46 @@
+use std::collections::HashMap;
 use std::pin::Pin;
 use std::ptr::null;
 use std::sync::Mutex;
 use crate::{Class, ClassRepr, ObjectHeader};
 use crate::vm::class::class::ClassRef;
 use crate::vm::class::field::FieldType;
-use crate::vm::class::method::{Code, Method, MethodDescriptor};
+use crate::vm::class::method::{Code, JvmMethod, Method, MethodDescriptor, NativeMethod};
+use crate::vm::pool::object::ObjectArena;
+use crate::vm::pool::string::StringPool;
 
 pub struct VM {
-    pub classes: Mutex<Vec<Pin<Box<Class>>>> // Indirection is required due to pinning -- since
-                                             // objects will point to the class directly, we
-                                             // can't move them around
-                                             // TODO: Allocate in special class area.
+    pub classes: Mutex<                     // Responsible for ensuring that only a single class loader can grow it
+        Vec<Pin<Box<Class>>>                // Indirection is required due to pinning -- since
+      >,                                    // objects will point to the class directly, we
+                                            // can't move them around
+    // TODO: Allocate in special class area.
+
+    pub bootstrap_cl_class_list: Mutex<HashMap<String, ClassRef>>,
+    pub object_arena: ObjectArena,
+    pub string_pool: StringPool,
+
+    pub classloader: ClassRef,
+    pub string_class: ClassRef
 }
 
 impl VM {
     pub fn init() -> VM {
-        let zero_ptr = unsafe { null() };
+        let mut vm = VM {
+            classes: Mutex::new(vec![]),
+            bootstrap_cl_class_list: Default::default(),
+            object_arena: Default::default(),
+            string_pool: Default::default(),
 
-        let mut vec = vec![];
-        let ptr = Class {
-            header: ObjectHeader { class: zero_ptr },
-            data: ClassRepr {
-                name: "java/lang/Object".to_string(),
-                superclass: ClassRef(zero_ptr),
-                interfaces: Default::default(),
-                constant_pool: vec![],
-                field_info: vec![],
-                method_info: vec![
-                    Method {
-                        name: "main".to_string(),
-                        descriptor: MethodDescriptor { parameters: vec![], ret: FieldType::V },
-                        code: Some(Code {
-                            max_stack: 2,
-                            max_locals: 6,
-                            code: vec![16, 14, 60, 17, 1, 158, 61, 16, 124, 62, 27, 28, 96, 54, 4, 27, 27, 96, 28, 96, 29, 96, 54, 5, 177]
-                        })
-                    }
-                ],
-                static_fields: Default::default()
-            }
+            classloader: ClassRef(null()),
+            string_class: ClassRef(null())
         };
-        let pin1 = Box::pin(ptr);
-        vec.push(pin1);
 
-        VM {
-            classes: Mutex::new(vec)
-        }
+        vm.load_bootstrap_classes();
+
+        vm.classloader = ClassRef(&*vm.classes.lock().unwrap()[1]);
+        vm.string_class = ClassRef(&*vm.classes.lock().unwrap()[2]);
+
+        vm
     }
 }
