@@ -1,5 +1,5 @@
 use std::cmp::max;
-use std::ops::Deref;
+use std::ops::{Deref, Not};
 use std::pin::Pin;
 use std::process::exit;
 use std::sync::atomic::Ordering;
@@ -108,7 +108,7 @@ impl VMThread {
 
         let instr = code.code[frame.pc];
         let instruction = Instruction::try_from(instr).unwrap();
-        println!("{:?}", instruction);
+        println!("{}: {:?}", frame.pc, instruction);
         match instruction {
             iconst_m1 | iconst_0 | iconst_1 | iconst_2 | iconst_3 | iconst_4
             | iconst_5 => {
@@ -174,7 +174,37 @@ impl VMThread {
                 let (res, _) = a.overflowing_mul(b);
                 frame.push(res as u64);
             }
+            iinc => {
+                let index = code.code[frame.pc + 1] as usize;
+                let cons = code.code[frame.pc + 2] as i8;
+
+                let num = frame.get_s(index) as i32;
+                frame.set_s(index, (num + cons as i32) as u32);
+            }
             i2l => {}
+            if_icmpge | if_icmpgt => {
+                let offset = i16::from_be_bytes(code.code[frame.pc + 1..frame.pc + 3].try_into()
+                    .unwrap()) as isize;
+                let b = frame.pop() as i32;
+                let a = frame.pop() as i32;
+
+                let cmp = match instruction {
+                    if_icmpge => a >= b,
+                    if_icmpgt => a > b,
+                    _ => panic!()
+                };
+                if cmp {
+                    frame.pc = (frame.pc as isize + offset) as usize;
+                } else {
+                    frame.pc += instruction_length(instruction);
+                }
+            }
+            goto => {
+                let offset = i16::from_be_bytes(code.code[frame.pc + 1..frame.pc + 3].try_into()
+                    .unwrap()) as isize;
+
+                frame.pc = (frame.pc as isize + offset) as usize;
+            }
             lreturn => {
                 *result = Some(frame.pop());
                 return InstructionResult::Return;
@@ -221,7 +251,9 @@ impl VMThread {
         }
         println!("{:?}", frame);
 
-        frame.pc += instruction_length(instruction);
+        if [if_icmpge, if_icmpgt, goto].contains(&instruction).not() {
+            frame.pc += instruction_length(instruction);
+        }
 
         InstructionResult::Continue
     }

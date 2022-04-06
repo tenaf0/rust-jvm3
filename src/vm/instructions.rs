@@ -6,7 +6,7 @@ pub enum InstructionResult {
     Return
 }
 
-#[derive(TryFromPrimitive, Debug)]
+#[derive(TryFromPrimitive, Debug, Copy, Clone, PartialEq)]
 #[repr(u8)]
 pub enum Instruction {
     iconst_m1 = 2,
@@ -38,7 +38,11 @@ pub enum Instruction {
     iadd = 96,
     ladd = 97,
     imul = 104,
+    iinc = 132,
     i2l = 133,
+    if_icmpge = 162,
+    if_icmpgt = 163,
+    goto = 167,
     lreturn = 173,
     _return = 177,
     getstatic = 178,
@@ -78,7 +82,10 @@ pub const fn instruction_length(instr: Instruction) -> usize {
         iadd => 1,
         ladd => 1,
         imul => 1,
+        iinc => 3,
         i2l => 1,
+        if_icmpge | if_icmpgt => 3,
+        goto => 3,
         lreturn => 1,
         _return => 1,
         getstatic => 3,
@@ -112,7 +119,10 @@ pub fn execute_roots_only(frame: &mut Frame, code: &[u8]) {
         iadd => {}
         ladd => {}
         imul => { frame.pop(); },
+        iinc => {}
         i2l => {}
+        if_icmpge | if_icmpgt => { frame.pop(); frame.pop(); }
+        goto => {}
         lreturn => {}
         _return => {}
         getstatic => {}, // TODO: Depends on field type
