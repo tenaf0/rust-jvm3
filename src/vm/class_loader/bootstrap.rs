@@ -42,7 +42,7 @@ impl VM {
         let object_name = "java/lang/Object".to_string();
         let object_class_data = Class {
             header: ObjectHeader { class: zero_ptr },
-            state: ClassState::Loaded,
+            state: Mutex::new(ClassState::Ready),
             data: ClassRepr {
                 name: object_name.clone(),
                 superclass: ClassRef::new(zero_ptr),
@@ -64,7 +64,7 @@ impl VM {
         let classloader_name = "java/lang/ClassLoader".to_string();
         let classloader_class_data = Class {
             header: ObjectHeader { class: zero_ptr },
-            state: ClassState::Loaded,
+            state: Mutex::new(ClassState::Ready),
             data: ClassRepr {
                 name: classloader_name.clone(),
                 superclass: object_class,
@@ -107,7 +107,7 @@ impl VM {
         let string_name = "java/lang/String".to_string();
         let string_class_data = Class {
             header: ObjectHeader { class: zero_ptr },
-            state: ClassState::Loaded,
+            state: Mutex::new(ClassState::Ready),
             data: ClassRepr {
                 name: string_name.clone(),
                 superclass: object_class,
@@ -341,7 +341,7 @@ impl VM {
 
         let class = Class {
             header: ObjectHeader { class: null() },
-            state: ClassState::Loaded,
+            state: Mutex::new(ClassState::Verified), // TODO: Verification before giving this state
             data: ClassRepr {
                 name: class_name.clone(),
                 superclass,

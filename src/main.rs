@@ -5,6 +5,7 @@ use smallvec::{SmallVec, smallvec};
 use crate::class_parser::constants::CPTag::Methodref;
 use crate::vm::class::class::{Class, ClassRef, ClassRepr};
 use crate::vm::class::method::Method;
+use crate::vm::class_loader::resolve::initialize_class;
 use crate::vm::object::ObjectHeader;
 use crate::vm::thread::thread::{MethodRef, ThreadStatus, VMThread};
 use crate::vm::vm::VM;
@@ -31,13 +32,9 @@ fn main() {
             let class = unsafe { ptr.read() };
             println!("Loaded: {:#?}", class);
 
-            let clinit_method = class.data.methods.iter().enumerate().find(|&m| match m {
-                (i, Method::Jvm(method)) => method.name == "<clinit>",
-                _ => false
-            });
-
-            if let Some((i, method)) = clinit_method {
-                thread.start((ClassRef::new(ptr), i), smallvec![]);
+            if let Err(e) = initialize_class(ClassRef::new(ptr)) {
+                eprintln!("Exception occured: {}", e);
+                return;
             }
 
             let main_method = class.data.methods.iter().enumerate().find(|&m| match m {

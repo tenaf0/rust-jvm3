@@ -1,9 +1,12 @@
+use std::fmt::format;
+use std::thread;
 use smallvec::smallvec;
-use crate::{Class, ClassRef, ThreadStatus, VM_HANDLER, VMThread};
+use crate::{Class, ClassRef, Method, ThreadStatus, VM_HANDLER, VMThread};
 use crate::ThreadStatus::{FAILED, FINISHED};
+use crate::vm::class::class::ClassState;
 use crate::vm::class::constant_pool::{CPEntry, SymbolicReference};
 use crate::vm::class::constant_pool::UnresolvedReference::{ClassReference, FieldReference, MethodReference};
-use crate::vm::class::field::Field;
+use crate::vm::class::field::{Field, FieldType};
 
 type Exception = String;
 
@@ -47,6 +50,8 @@ pub fn resolve(class: ClassRef, index: usize) -> Result<(), Exception> {
                         .find(|(i, f)| &f.name == name && &f.descriptor == descriptor) {
                         class.set_cp_entry(index, ResolvedSymbolicReference(
                             SymbolicReference::FieldReference(class, false, field_index)));
+
+                        initialize_class(*other_class);
                     }
                 }
                 _ => panic!()
@@ -55,5 +60,58 @@ pub fn resolve(class: ClassRef, index: usize) -> Result<(), Exception> {
             Ok(())
         },
         _ => Ok(())
+    }
+}
+
+pub fn initialize_class(class: ClassRef) -> Result<(), Exception> {
+    {
+        let class_state = &mut *class.state.lock().unwrap();
+        if class_state == &ClassState::Ready ||
+            class_state == &ClassState::Initializing(thread::current().id()) {
+            return Ok(());
+        } else if class_state != &ClassState::Verified {
+            return Err(format!("Class '{}' should be in state Verified at initialization but it was \
+        {:?}", class.data.name, class_state));
+        }
+
+        *class_state = ClassState::Initializing(thread::current().id());
+    }
+
+
+    println!("Initializing {}", class.data.name);
+
+    let clinit = class.data.methods.iter().enumerate().find(|(i,m)| {
+        match m {
+            // TODO: Guard should have 'static' as well
+            Method::Jvm(method) if method.name == "<clinit>" && method.descriptor.ret ==
+                FieldType::V && method.descriptor.parameters.len() == 0 => true,
+            _ => false
+        }
+    });
+
+    match clinit {
+        Some((i, _)) => {
+            // TODO: Apply ConstantValue attribute
+            let mut parent_list = vec![class.data.superclass];
+            for i in &class.data.interfaces {
+                // TODO: Add to parent_list if declare at least one non-abstract, non-static method
+            }
+
+            for i in parent_list {
+                initialize_class(i)?;
+            }
+
+            let mut thread = VMThread::new();
+            thread.start((class, i), smallvec![]);
+
+            match thread.status {
+                FINISHED(_) => *class.state.lock().unwrap() = ClassState::Ready,
+                FAILED(e) => return Err(e),
+                _ => panic!()
+            }
+
+            Ok(())
+        },
+        None => Err(format!("No <clinit> method was found in {}", class.data.name))
     }
 }

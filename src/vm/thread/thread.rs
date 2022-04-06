@@ -44,16 +44,11 @@ impl VMThread {
         }
 
         self.status = RUNNING;
-        println!("Thread started method: {:?}", method_ref);
         self.method(method_ref, &mut frame, arg_no);
         if frame.exception.is_none() {
             self.status = FINISHED(frame.safe_peek());
-
-            println!("Thread finished execution with return value: {:?}", frame.safe_peek());
         } else {
             let string = frame.exception.unwrap();
-            eprintln!("Thread exited with exception: {}", string.clone());
-
             self.status = FAILED(string);
         }
     }

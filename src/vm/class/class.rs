@@ -4,17 +4,18 @@ use std::mem::ManuallyDrop;
 use std::ops::Deref;
 use std::sync::{Mutex, RwLock};
 use std::sync::atomic::AtomicU64;
+use std::thread::ThreadId;
 use smallvec::SmallVec;
 use crate::vm::class::constant_pool::CPEntry;
 use crate::vm::class::field::Field;
 use crate::vm::class::method::Method;
 use crate::vm::object::ObjectHeader;
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum ClassState {
     Loaded,
     Verified,
-    Initializing,
+    Initializing(ThreadId),
     Ready
 }
 
@@ -24,7 +25,7 @@ pub enum ClassState {
 #[repr(C)]
 pub struct Class {
     pub header: ObjectHeader,
-    pub state: ClassState,
+    pub state: Mutex<ClassState>,
     pub data: ClassRepr,
 }
 
