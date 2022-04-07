@@ -22,7 +22,7 @@ pub fn resolve(class: ClassRef, index: usize) -> Result<(), Exception> {
             let mut thread = VMThread::new();
             let classloader = vm.classloader;
 
-            let ptr = vm.string_pool.add_string(name);
+            let ptr = vm.string_pool.intern_string(name);
 
             // Should be done by the defining loader of class, but currently we only support a
             // bootstrap class loader
@@ -49,7 +49,7 @@ pub fn resolve(class: ClassRef, index: usize) -> Result<(), Exception> {
                     if let Some((field_index, _)) = other_class.data.fields.iter().enumerate()
                         .find(|(i, f)| &f.name == name && &f.descriptor == descriptor) {
                         class.set_cp_entry(index, ResolvedSymbolicReference(
-                            SymbolicReference::FieldReference(class, false, field_index)));
+                            SymbolicReference::FieldReference(*other_class, false, field_index)));
 
                         initialize_class(*other_class);
                     }

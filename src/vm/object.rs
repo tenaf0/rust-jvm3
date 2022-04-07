@@ -51,7 +51,26 @@ impl ObjectPtr {
 #[derive(Copy, Clone, Debug)]
 #[repr(align(64))]
 pub struct ObjectHeader {
-    pub class: *const Class
+    pub class: *const Class,
+    dummy_data: u32
+}
+
+impl ObjectHeader {
+    pub fn new(ptr: *const Class) -> ObjectHeader {
+        ObjectHeader {
+            class: ptr,
+            dummy_data: 0
+        }
+    }
+}
+
+impl Default for ObjectHeader {
+    fn default() -> Self {
+        ObjectHeader {
+            class: null(),
+            dummy_data: 0
+        }
+    }
 }
 
 unsafe impl Sync for ObjectHeader {}

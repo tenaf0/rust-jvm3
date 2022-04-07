@@ -24,13 +24,13 @@ fn main() {
         let c = vm.classloader;
         println!("{:?}", c);
 
-        let ptr = vm.string_pool.add_string("hu.garaba.Main");
+        let ptr = vm.string_pool.intern_string("hu.garaba.Main");
 
         thread.start((c, 0), smallvec![0, ptr.ptr as u64]);
         if let ThreadStatus::FINISHED(Some(class)) = thread.status {
             let ptr: *const Class = (class as *const u64).cast();
             let class = unsafe { ptr.read() };
-            println!("Loaded: {:#?}", class);
+            println!("Loaded: {}", class.data.name);
 
             if let Err(e) = initialize_class(ClassRef::new(ptr)) {
                 eprintln!("Exception occured: {}", e);
@@ -44,7 +44,10 @@ fn main() {
 
             if let Some((i, method)) = main_method {
                 thread.start((ClassRef::new(ptr), i), smallvec![]);
+                println!("{:?}", thread.status);
             }
+        } else {
+            println!("{:?}", thread.status);
         }
     });
 

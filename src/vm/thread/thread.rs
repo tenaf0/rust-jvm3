@@ -17,10 +17,11 @@ pub type MethodRef = (ClassRef, usize);
 
 const STACK_SIZE: usize = 36;
 
+#[derive(Debug)]
 pub enum ThreadStatus {
     RUNNING,
     FINISHED(Option<u64>),
-    FAILED(String)
+    FAILED(String),
 }
 
 pub struct VMThread {
@@ -161,15 +162,22 @@ impl VMThread {
                 frame.push(val as u64);
             }
             iadd => {
-                let a = frame.pop() as u32;
                 let b = frame.pop() as u32;
+                let a = frame.pop() as u32;
 
                 let (res, _) = a.overflowing_add(b);
                 frame.push(res as u64);
             }
-            imul => {
-                let a = frame.pop() as u32;
+            isub => {
                 let b = frame.pop() as u32;
+                let a = frame.pop() as u32;
+
+                let (res, _) = a.overflowing_sub(b);
+                frame.push(res as u64);
+            }
+            imul => {
+                let b = frame.pop() as u32;
+                let a = frame.pop() as u32;
 
                 let (res, _) = a.overflowing_mul(b);
                 frame.push(res as u64);

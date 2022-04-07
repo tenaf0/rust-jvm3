@@ -37,6 +37,7 @@ pub enum Instruction {
     lstore_2 = 65,
     iadd = 96,
     ladd = 97,
+    isub = 100,
     imul = 104,
     iinc = 132,
     i2l = 133,
@@ -81,6 +82,7 @@ pub const fn instruction_length(instr: Instruction) -> usize {
         lstore_2 => 1,
         iadd => 1,
         ladd => 1,
+        isub => 1,
         imul => 1,
         iinc => 3,
         i2l => 1,
@@ -118,6 +120,7 @@ pub fn execute_roots_only(frame: &mut Frame, code: &[u8]) {
         lstore_2 => {}
         iadd => {}
         ladd => {}
+        isub => { frame.pop(); frame.pop(); }
         imul => { frame.pop(); },
         iinc => {}
         i2l => {}

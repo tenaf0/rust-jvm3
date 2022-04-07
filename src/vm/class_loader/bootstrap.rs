@@ -41,7 +41,7 @@ impl VM {
 
         let object_name = "java/lang/Object".to_string();
         let object_class_data = Class {
-            header: ObjectHeader { class: zero_ptr },
+            header: ObjectHeader::default(),
             state: Mutex::new(ClassState::Ready),
             data: ClassRepr {
                 name: object_name.clone(),
@@ -63,7 +63,7 @@ impl VM {
 
         let classloader_name = "java/lang/ClassLoader".to_string();
         let classloader_class_data = Class {
-            header: ObjectHeader { class: zero_ptr },
+            header: ObjectHeader::default(),
             state: Mutex::new(ClassState::Ready),
             data: ClassRepr {
                 name: classloader_name.clone(),
@@ -81,7 +81,7 @@ impl VM {
                         let index = string.get_field(0);
 
                         let vm = VM_HANDLER.get().unwrap();
-                        let string = unsafe { &vm.string_pool.get(index as usize ).read()};
+                        let string = &vm.string_pool.get(index as usize );
                         let res = vm.load_class(string);
 
                         match res {
@@ -106,7 +106,7 @@ impl VM {
 
         let string_name = "java/lang/String".to_string();
         let string_class_data = Class {
-            header: ObjectHeader { class: zero_ptr },
+            header: ObjectHeader::default(),
             state: Mutex::new(ClassState::Ready),
             data: ClassRepr {
                 name: string_name.clone(),
@@ -223,8 +223,7 @@ impl VM {
                     let string = get_cp_info!(parsed_class, ind, CPTag::Utf8,
                         CPInfo::Utf8(ind), ind)?.clone();
 
-                    let ptr = VM_HANDLER.get().unwrap().string_pool.add_string(string.as_str());
-                    // TODO: It should be interned
+                    let ptr = VM_HANDLER.get().unwrap().string_pool.intern_string(string.as_str());
 
                     constant_pool.push(ConstantString(ptr));
                 }
@@ -311,7 +310,7 @@ impl VM {
         let superclass_name = get_cp_info!(parsed_class, superclass, CPTag::Utf8, CPInfo::Utf8
             (str), str)?;
 
-        let ptr = self.string_pool.add_string(superclass_name);
+        let ptr = self.string_pool.intern_string(superclass_name);
 
         let mut thread = VMThread::new();
         thread.start((self.classloader, 0), smallvec![0, ptr.ptr as u64]);
@@ -340,7 +339,7 @@ impl VM {
         }
 
         let class = Class {
-            header: ObjectHeader { class: null() },
+            header: ObjectHeader::default(),
             state: Mutex::new(ClassState::Verified), // TODO: Verification before giving this state
             data: ClassRepr {
                 name: class_name.clone(),
