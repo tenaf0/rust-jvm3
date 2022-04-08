@@ -1,5 +1,7 @@
 use std::fmt::{Debug, Formatter};
 use smallvec::SmallVec;
+use crate::class_parser::constants::AccessFlagMethod;
+use crate::helper::has_flag;
 use crate::vm::class::field::FieldType;
 
 #[derive(Debug, PartialEq, Clone)]
@@ -9,15 +11,27 @@ pub struct MethodDescriptor {
 }
 
 #[derive(Debug)]
-pub enum Method {
+pub struct Method {
+    pub flag: u16,
+    pub name: String,
+    pub descriptor: MethodDescriptor,
+    pub repr: MethodRepr
+}
+
+impl Method {
+    pub fn is_static(&self) -> bool {
+        has_flag(self.flag, AccessFlagMethod::ACC_STATIC)
+    }
+}
+
+#[derive(Debug)]
+pub enum MethodRepr {
     Jvm(JvmMethod),
     Native(NativeMethod)
 }
 
 #[derive(Debug)]
 pub struct JvmMethod {
-    pub name: String,
-    pub descriptor: MethodDescriptor,
     pub code: Option<Code>,
 }
 

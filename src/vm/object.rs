@@ -1,8 +1,9 @@
-use std::mem::size_of;
+
 use std::ptr::{null, null_mut};
+use std::sync::atomic::AtomicU64;
 use crate::Class;
 use crate::vm::class::class::ClassRef;
-use crate::vm::pool::string::StringObject;
+
 
 /// Points to a variable length struct having the following data layout:
 /// struct Object {
@@ -12,7 +13,7 @@ use crate::vm::pool::string::StringObject;
 #[derive(Copy, Clone, Debug)]
 #[repr(transparent)]
 pub struct ObjectPtr {
-    pub ptr: *mut u64
+    pub ptr: *const AtomicU64
 }
 
 unsafe impl Sync for ObjectPtr {}
@@ -33,14 +34,13 @@ impl ObjectPtr {
         }
     }
 
-    pub fn get_field(&self, field_no: usize) -> u64 {
+    pub fn get_field(&self, field_no: usize) -> AtomicU64 {
         let class = self.get_class();
+        assert!(field_no < class.data.instance_field_count);
 
-        let mut ptr: *mut ObjectHeader = self.ptr.cast();
+        let mut ptr: *const ObjectHeader = self.ptr.cast();
         ptr = unsafe { ptr.offset(1) };
-        let mut ptr: *mut u64 = ptr.cast();
-
-        // assert!(field_no >= 1 && field_no <= class.instance_field_count); TODO
+        let ptr: *const AtomicU64 = ptr.cast();
 
         unsafe {
             ptr.offset(field_no as isize).read()
@@ -49,7 +49,7 @@ impl ObjectPtr {
 }
 
 #[derive(Copy, Clone, Debug)]
-#[repr(align(64))]
+// #[repr(align(64))]
 pub struct ObjectHeader {
     pub class: *const Class,
     dummy_data: u32

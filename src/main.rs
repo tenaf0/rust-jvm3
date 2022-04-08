@@ -1,13 +1,14 @@
-use std::pin::Pin;
-use std::ptr::null;
+
+
+
 use once_cell::sync::OnceCell;
-use smallvec::{SmallVec, smallvec};
-use crate::class_parser::constants::CPTag::Methodref;
+use smallvec::{smallvec};
+
 use crate::vm::class::class::{Class, ClassRef, ClassRepr};
 use crate::vm::class::method::Method;
 use crate::vm::class_loader::resolve::initialize_class;
 use crate::vm::object::ObjectHeader;
-use crate::vm::thread::thread::{MethodRef, ThreadStatus, VMThread};
+use crate::vm::thread::thread::{ThreadStatus, VMThread};
 use crate::vm::vm::VM;
 
 mod class_parser;
@@ -37,12 +38,12 @@ fn main() {
                 return;
             }
 
-            let main_method = class.data.methods.iter().enumerate().find(|&m| match m {
-                (i, Method::Jvm(method)) => method.name == "main",
-                _ => false
+            let main_method = class.data.methods.iter().enumerate().find(|(_i, m)| {
+                m.name == "main"
+                // TODO: args
             });
 
-            if let Some((i, method)) = main_method {
+            if let Some((i, _method)) = main_method {
                 thread.start((ClassRef::new(ptr), i), smallvec![]);
                 println!("{:?}", thread.status);
             }

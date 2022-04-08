@@ -1,8 +1,8 @@
 use std::cell::UnsafeCell;
-use std::fmt::{Debug, Formatter};
-use std::mem::ManuallyDrop;
+use std::fmt::{Debug};
+
 use std::ops::Deref;
-use std::sync::{Mutex, RwLock};
+use std::sync::{Mutex};
 use std::sync::atomic::AtomicU64;
 use std::thread::ThreadId;
 use smallvec::SmallVec;
@@ -53,7 +53,8 @@ pub struct ClassRepr {
     pub fields: Vec<Field>,
     pub methods: Vec<Method>,
     // TODO: attributes
-    pub static_fields: SmallVec<[AtomicU64; 32]>
+    pub static_fields: SmallVec<[AtomicU64; 32]>,
+    pub instance_field_count: usize // Cumulative size of all instance fields in the hierarchy
 }
 
 /// Concrete type used as "pointer" to a Class instance

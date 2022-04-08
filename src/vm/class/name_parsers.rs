@@ -1,4 +1,3 @@
-use crate::vm::class::constant_pool::SymbolicReference::MethodReference;
 use crate::vm::class::field::FieldType;
 use crate::vm::class::method::MethodDescriptor;
 

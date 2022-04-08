@@ -8,6 +8,7 @@ pub enum InstructionResult {
 
 #[derive(TryFromPrimitive, Debug, Copy, Clone, PartialEq)]
 #[repr(u8)]
+#[allow(non_camel_case_types)]
 pub enum Instruction {
     iconst_m1 = 2,
     iconst_0 = 3,
@@ -27,6 +28,10 @@ pub enum Instruction {
     lload_0 = 30,
     lload_1 = 31,
     lload_2 = 32,
+    aload_0 = 42,
+    aload_1 = 43,
+    aload_2 = 44,
+    aload_3 = 45,
     istore = 54,
     istore_0 = 59,
     istore_1 = 60,
@@ -35,6 +40,11 @@ pub enum Instruction {
     lstore_0 = 63,
     lstore_1 = 64,
     lstore_2 = 65,
+    astore_0 = 75,
+    astore_1 = 76,
+    astore_2 = 77,
+    astore_3 = 78,
+    dup = 89,
     iadd = 96,
     ladd = 97,
     isub = 100,
@@ -48,6 +58,9 @@ pub enum Instruction {
     _return = 177,
     getstatic = 178,
     putstatic = 179,
+    getfield = 180,
+    invokespecial = 183,
+    new = 187,
 }
 
 pub const fn instruction_length(instr: Instruction) -> usize {
@@ -72,6 +85,7 @@ pub const fn instruction_length(instr: Instruction) -> usize {
         lload_0 => 2,
         lload_1 => 2,
         lload_2 => 2,
+        aload_0 | aload_1 | aload_2 | aload_3 => 1,
         istore => 2,
         istore_0 => 1,
         istore_1 => 1,
@@ -80,6 +94,8 @@ pub const fn instruction_length(instr: Instruction) -> usize {
         lstore_0 => 1,
         lstore_1 => 1,
         lstore_2 => 1,
+        astore_0 | astore_1 | astore_2 | astore_3 => 1,
+        dup => 1,
         iadd => 1,
         ladd => 1,
         isub => 1,
@@ -91,7 +107,10 @@ pub const fn instruction_length(instr: Instruction) -> usize {
         lreturn => 1,
         _return => 1,
         getstatic => 3,
-        putstatic => 3
+        putstatic => 3,
+        getfield => 3,
+        invokespecial => 3,
+        new => 3,
     }
 }
 
@@ -110,6 +129,7 @@ pub fn execute_roots_only(frame: &mut Frame, code: &[u8]) {
         ldc2_w => frame.push(0),
         iload_0 | iload_1 | iload_2 | iload_3 => frame.push(0),
         lload_0 | lload_1 | lload_2 => frame.push(0),
+        aload_0 | aload_1 | aload_2 | aload_3 => todo!(),
         istore => {}
         istore_0 => {}
         istore_1 => {}
@@ -118,6 +138,12 @@ pub fn execute_roots_only(frame: &mut Frame, code: &[u8]) {
         lstore_0 => {}
         lstore_1 => {}
         lstore_2 => {}
+        astore_0 | astore_1 | astore_2 | astore_3 => {
+            // TODO
+        }
+        dup => {
+            frame.push(frame.safe_peek().unwrap());
+        }
         iadd => {}
         ladd => {}
         isub => { frame.pop(); frame.pop(); }
@@ -130,5 +156,8 @@ pub fn execute_roots_only(frame: &mut Frame, code: &[u8]) {
         _return => {}
         getstatic => {}, // TODO: Depends on field type
         putstatic => { frame.pop(); }
+        getfield => {} // TODO: Depends on method
+        invokespecial => {} // TODO: Depends on method
+        new => frame.push(1)
     }
 }

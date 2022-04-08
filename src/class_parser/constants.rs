@@ -107,6 +107,7 @@ pub enum CPInfo {
     Hole, // Used for marking an empty slot in the constant pool (for long, double)
 }
 
+#[allow(non_camel_case_types)]
 pub enum AccessFlagClass {
     ACC_PUBLIC = 0x0001,
     ACC_FINAL = 0x0010,
@@ -121,6 +122,7 @@ pub enum AccessFlagClass {
 
 #[derive(IntoPrimitive)]
 #[repr(u16)]
+#[allow(non_camel_case_types)]
 pub enum AccessFlagField {
     ACC_PUBLIC = 0x0001,
     ACC_PRIVATE = 0x0002,
@@ -133,6 +135,9 @@ pub enum AccessFlagField {
     ACC_ENUM = 0x4000,
 }
 
+#[derive(IntoPrimitive)]
+#[repr(u16)]
+#[allow(non_camel_case_types)]
 pub enum AccessFlagMethod {
     ACC_PUBLIC = 0x0001,
     ACC_PRIVATE = 0x0002,

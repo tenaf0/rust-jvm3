@@ -1,7 +1,7 @@
-use crate::class_parser::constants::CPInfo;
+
 use crate::vm::class::class::ClassRef;
-use crate::vm::class::field::{Field, FieldType};
-use crate::vm::class::method::{Method, MethodDescriptor};
+use crate::vm::class::field::{FieldType};
+use crate::vm::class::method::{MethodDescriptor};
 use crate::vm::object::ObjectPtr;
 
 #[derive(Debug, Clone)]
@@ -23,7 +23,7 @@ pub enum UnresolvedReference {
 #[derive(Debug, Clone)]
 pub enum SymbolicReference {
     ClassReference(ClassRef),
-    MethodReference(*const Method),
+    MethodReference(ClassRef, usize),
     FieldReference(ClassRef, bool, usize) // Class containing field, whether it is an instance
                                           // field, and index
 }

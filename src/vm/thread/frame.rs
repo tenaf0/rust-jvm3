@@ -1,6 +1,6 @@
 use std::fmt::{Debug, Formatter};
 use std::mem::MaybeUninit;
-use smallvec::{SmallVec, smallvec};
+use smallvec::{SmallVec};
 use crate::vm::class::method::MAX_NO_OF_ARGS;
 
 const MAX_FRAME_SIZE: usize = 125;

@@ -2,10 +2,8 @@ use std::collections::HashMap;
 use std::pin::Pin;
 use std::ptr::null;
 use std::sync::Mutex;
-use crate::{Class, ClassRepr, ObjectHeader};
+use crate::{Class};
 use crate::vm::class::class::ClassRef;
-use crate::vm::class::field::FieldType;
-use crate::vm::class::method::{Code, JvmMethod, Method, MethodDescriptor, NativeMethod};
 use crate::vm::pool::object::ObjectArena;
 use crate::vm::pool::string::StringPool;
 

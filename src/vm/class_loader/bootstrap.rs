@@ -1,12 +1,12 @@
 use std::cell::UnsafeCell;
 use std::fs::File;
-use std::io::ErrorKind::ConnectionAborted;
+
 use std::io::Read;
-use std::ops::Deref;
+
 use std::path::PathBuf;
-use std::ptr::{null, null_mut};
-use std::sync::{Mutex, RwLock};
-use std::sync::atomic::AtomicU64;
+use std::ptr::{null};
+use std::sync::{Mutex};
+use std::sync::atomic::{AtomicU64, Ordering};
 use smallvec::{smallvec, SmallVec};
 use crate::{Class, ClassRepr, get_cp_info, Method, ObjectHeader, VM, VM_HANDLER, VMThread};
 use crate::class_parser::constants::CPInfo;
@@ -17,9 +17,9 @@ use crate::vm::class::class::{ClassRef, ClassState};
 use crate::vm::class::constant_pool::{CPEntry, UnresolvedReference};
 use crate::vm::class::constant_pool::CPEntry::{ConstantString, ConstantValue, UnresolvedSymbolicReference};
 use crate::vm::class::field::{Field, FieldType};
-use crate::vm::class::method::{Code, JvmMethod, MethodDescriptor, NativeMethod};
+use crate::vm::class::method::{Code, JvmMethod, MethodDescriptor, MethodRepr, NativeMethod};
 use crate::vm::object::ObjectPtr;
-use crate::vm::pool::string::StringObject;
+
 use crate::vm::thread::thread::ThreadStatus;
 use crate::vm::thread::thread::ThreadStatus::FINISHED;
 
@@ -50,7 +50,8 @@ impl VM {
                 constant_pool: vec![],
                 fields: vec![],
                 methods: vec![],
-                static_fields: Default::default()
+                static_fields: Default::default(),
+                instance_field_count: 0
             }
         };
 
@@ -72,28 +73,39 @@ impl VM {
                 constant_pool: vec![],
                 fields: vec![],
                 methods: vec![
-                    Method::Native(NativeMethod { fn_ptr: |args, exc| {
-                        // first argument is the bootstrap class loader (null), second is a
-                        // String object which denotes the name of the class that should be loaded
+                    Method {
+                        flag: 0,
+                        name: "loadClass".to_string(),
+                        descriptor: MethodDescriptor {
+                            parameters: vec![
+                                FieldType::L("java/lang/ClassLoader".to_string()),
+                                FieldType::L("java/lang/String".to_string())],
+                            ret: FieldType::L("java/lang/Class".to_string()) },
+                        repr: MethodRepr::Native(NativeMethod { fn_ptr: |args, exc| {
+                            // first argument is the bootstrap class loader (null), second is a
+                            // String object which denotes the name of the class that should be loaded
 
-                        let string = args[1] as *mut u64;
-                        let string = ObjectPtr { ptr: string };
-                        let index = string.get_field(0);
+                            let string = args[1] as *const AtomicU64;
+                            let string = ObjectPtr { ptr: string };
+                            let index = string.get_field(0);
 
-                        let vm = VM_HANDLER.get().unwrap();
-                        let string = &vm.string_pool.get(index as usize );
-                        let res = vm.load_class(string);
+                            let vm = VM_HANDLER.get().unwrap();
+                            let string = &vm.string_pool.get(index.load(Ordering::Relaxed) as usize);
+                            let res = vm.load_class(string);
 
-                        match res {
-                            Ok(val) => Some(val.ptr() as u64),
-                            Err(e) => {
-                                *exc = Some(e);
-                                None
+                            match res {
+                                Ok(val) => Some(val.ptr() as u64),
+                                Err(e) => {
+                                    *exc = Some(e);
+                                    None
+                                }
                             }
-                        }
-                    } })
+                        } })
+                    }
+
                 ],
-                static_fields: Default::default()
+                static_fields: Default::default(),
+                instance_field_count: 0
             }
         };
 
@@ -113,9 +125,16 @@ impl VM {
                 superclass: object_class,
                 interfaces: Default::default(),
                 constant_pool: vec![],
-                fields: vec![],
+                fields: vec![
+                    Field {
+                        flag: 0,
+                        name: "index".to_string(),
+                        descriptor: FieldType::J
+                    }
+                ],
                 methods: vec![],
-                static_fields: Default::default()
+                static_fields: Default::default(),
+                instance_field_count: 1
             }
         };
 
@@ -261,11 +280,14 @@ impl VM {
                 }
             }
 
-            methods.push(Method::Jvm(JvmMethod {
+            methods.push(Method {
+                flag: m.access_flags,
                 name,
                 descriptor,
-                code
-            }));
+                repr: MethodRepr::Jvm(
+                    JvmMethod { code }
+                ),
+            });
         }
 
         Ok(())
@@ -290,13 +312,13 @@ impl VM {
         Ok(())
     }
 
-    pub fn derive_class(&self, class_loader: ObjectPtr, name: &str, buf: &[u8]) ->
+    pub fn derive_class(&self, _class_loader: ObjectPtr, _name: &str, buf: &[u8]) ->
                                                                                  Result<ClassRef, Exception> {
         let parsed_class = parse_class(buf).map_err(|e| e.to_string())?;
 
         let mut constant_pool = vec![];
         VM::load_cp_entries(&parsed_class, &mut constant_pool)?;
-        let mut constant_pool: Vec<UnsafeCell<CPEntry>> = constant_pool.iter().map(|e|
+        let constant_pool: Vec<UnsafeCell<CPEntry>> = constant_pool.iter().map(|e|
             UnsafeCell::new(e.clone())).collect();
 
         let this_class = get_cp_info!(parsed_class, parsed_class.this_class, CPTag::Class,
@@ -315,7 +337,7 @@ impl VM {
         let mut thread = VMThread::new();
         thread.start((self.classloader, 0), smallvec![0, ptr.ptr as u64]);
 
-        let mut superclass: ClassRef;
+        let superclass: ClassRef;
 
         match thread.status {
             FINISHED(Some(class)) => superclass = ClassRef::new(class as *const Class),
@@ -338,6 +360,8 @@ impl VM {
             static_fields.push(AtomicU64::new(0));
         }
 
+        let instance_field_count = fields.len() - static_field_count;
+
         let class = Class {
             header: ObjectHeader::default(),
             state: Mutex::new(ClassState::Verified), // TODO: Verification before giving this state
@@ -348,7 +372,8 @@ impl VM {
                 constant_pool,
                 fields,
                 methods,
-                static_fields
+                static_fields,
+                instance_field_count
             }
         };
 

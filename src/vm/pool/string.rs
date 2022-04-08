@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::hash::Hash;
+
 use std::sync::RwLock;
 use crate::{ObjectHeader, VM_HANDLER};
 use crate::vm::object::ObjectPtr;
@@ -32,7 +32,7 @@ impl StringPool {
 
     fn add_string_to_pool(&self, value: &str) -> usize {
         let mut pool = self.pool.write().unwrap();
-        let mut string_object = StringObject {
+        let string_object = StringObject {
             header: ObjectHeader::new(VM_HANDLER.get().unwrap().string_class.ptr()),
             data: [pool.len() as u64],
             string: value.to_string()
@@ -65,7 +65,7 @@ impl StringPool {
     }
 
     pub fn get(&self, index: usize) -> String {
-        let mut pool = self.pool.read().unwrap();
+        let pool = self.pool.read().unwrap();
 
         pool[index].string.clone()
     }
@@ -81,12 +81,13 @@ impl Default for StringPool {
 }
 
 mod tests {
-    use crate::vm::pool::string::StringPool;
+    use std::sync::atomic::Ordering;
     use crate::{VM, VM_HANDLER};
+    use crate::vm::pool::string::StringPool;
 
     #[test]
     fn add_string() {
-        let vm = VM_HANDLER.get_or_init(VM::init);
+        let _vm = VM_HANDLER.get_or_init(VM::init);
 
         let pool = StringPool { pool: Default::default(), interned_string: Default::default() };
 
@@ -94,16 +95,16 @@ mod tests {
         assert_eq!(pool.pool.read().unwrap().len(), 1);
 
         let ptr2 = pool.add_string("string2");
-        let index = ptr2.get_field(0);
+        let index = ptr2.get_field(0).load(Ordering::Relaxed);
         assert_eq!(pool.pool.read().unwrap().len(), 2);
-        assert_eq!(unsafe { &*pool.get(index as usize) }, "string2");
+        assert_eq!(&*pool.get(index as usize), "string2");
 
         let ptr3 = pool.intern_string("string1");
         assert_eq!(pool.pool.read().unwrap().len(), 2);
         assert_eq!(pool.interned_string.read().unwrap().len(), 1);
         assert_eq!(ptr1.ptr, ptr3.ptr);
 
-        let index = ptr3.get_field(0);
-        assert_eq!(unsafe { &*pool.get(index as usize) }, "string1");
+        let index = ptr3.get_field(0).load(Ordering::Relaxed);
+        assert_eq!(&*pool.get(index as usize), "string1");
     }
 }
