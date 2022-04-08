@@ -51,6 +51,8 @@ pub fn resolve(class: ClassRef, index: usize) -> Result<(), Exception> {
                 ResolvedSymbolicReference(SymbolicReference::ClassReference(other_class)) => {
                     let res = resolve_method(*other_class, method, false)?;
 
+                    initialize_class(*other_class);
+
                     class.set_cp_entry(index, ResolvedSymbolicReference(res));
 
                     Ok(())

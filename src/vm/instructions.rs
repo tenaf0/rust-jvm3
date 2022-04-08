@@ -58,6 +58,7 @@ pub enum Instruction {
     if_icmpge = 162,
     if_icmpgt = 163,
     goto = 167,
+    ireturn = 172,
     lreturn = 173,
     _return = 177,
     getstatic = 178,
@@ -65,6 +66,7 @@ pub enum Instruction {
     getfield = 180,
     putfield = 181,
     invokespecial = 183,
+    invokestatic = 184,
     new = 187,
 }
 
@@ -113,6 +115,7 @@ pub const fn instruction_length(instr: Instruction) -> usize {
         l2i => 1,
         if_icmpge | if_icmpgt => 3,
         goto => 3,
+        ireturn => 1,
         lreturn => 1,
         _return => 1,
         getstatic => 3,
@@ -120,10 +123,12 @@ pub const fn instruction_length(instr: Instruction) -> usize {
         getfield => 3,
         putfield => 3,
         invokespecial => 3,
+        invokestatic => 3,
         new => 3,
     }
 }
 
+/*
 #[inline]
 pub fn execute_roots_only(frame: &mut Frame, code: &[u8]) {
     use Instruction::*;
@@ -179,4 +184,4 @@ pub fn execute_roots_only(frame: &mut Frame, code: &[u8]) {
         invokespecial => {} // TODO: Depends on method
         new => frame.push(1)
     }
-}
+}*/

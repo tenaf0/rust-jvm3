@@ -288,6 +288,10 @@ impl VMThread {
 
                 frame.pc = (frame.pc as isize + offset) as usize;
             }
+            ireturn => {
+                *result = Some(frame.pop());
+                return InstructionResult::Return;
+            }
             lreturn => {
                 *result = Some(frame.pop());
                 return InstructionResult::Return;
@@ -376,6 +380,23 @@ impl VMThread {
                         let res = invoke_special(*other_class, method).unwrap();
 
                         self.method(res, 1);
+                    }
+                    _ => panic!()
+                }
+            }
+            invokestatic => {
+                let index = u16::from_be_bytes(code.code[frame.pc + 1..frame.pc + 3].try_into()
+                    .unwrap());
+
+                resolve(ClassRef::new(class), index as usize);
+                let entry = class.get_cp_entry(index as usize);
+
+                match entry {
+                    CPEntry::ResolvedSymbolicReference(MethodReference(other_class, index)) => {
+                        let method = &other_class.data.methods[*index];
+                        assert!(method.is_static());
+
+                        self.method((*other_class, *index), method.descriptor.parameters.len());
                     }
                     _ => panic!()
                 }
