@@ -10,6 +10,7 @@ pub enum InstructionResult {
 #[repr(u8)]
 #[allow(non_camel_case_types)]
 pub enum Instruction {
+    aconst_null = 1,
     iconst_m1 = 2,
     iconst_0 = 3,
     iconst_1 = 4,
@@ -17,6 +18,8 @@ pub enum Instruction {
     iconst_3 = 6,
     iconst_4 = 7,
     iconst_5 = 8,
+    lconst_0 = 9,
+    lconst_1 = 10,
     bipush = 16,
     sipush = 17,
     ldc = 18,
@@ -51,6 +54,7 @@ pub enum Instruction {
     imul = 104,
     iinc = 132,
     i2l = 133,
+    l2i = 136,
     if_icmpge = 162,
     if_icmpgt = 163,
     goto = 167,
@@ -59,6 +63,7 @@ pub enum Instruction {
     getstatic = 178,
     putstatic = 179,
     getfield = 180,
+    putfield = 181,
     invokespecial = 183,
     new = 187,
 }
@@ -67,6 +72,7 @@ pub const fn instruction_length(instr: Instruction) -> usize {
     use Instruction::*;
 
     match instr {
+        aconst_null => 1,
         iconst_m1 => 1,
         iconst_0 => 1,
         iconst_1 => 1,
@@ -74,6 +80,8 @@ pub const fn instruction_length(instr: Instruction) -> usize {
         iconst_3 => 1,
         iconst_4 => 1,
         iconst_5 => 1,
+        lconst_0 => 1,
+        lconst_1 => 1,
         bipush => 2,
         sipush => 3,
         ldc => 2,
@@ -102,6 +110,7 @@ pub const fn instruction_length(instr: Instruction) -> usize {
         imul => 1,
         iinc => 3,
         i2l => 1,
+        l2i => 1,
         if_icmpge | if_icmpgt => 3,
         goto => 3,
         lreturn => 1,
@@ -109,6 +118,7 @@ pub const fn instruction_length(instr: Instruction) -> usize {
         getstatic => 3,
         putstatic => 3,
         getfield => 3,
+        putfield => 3,
         invokespecial => 3,
         new => 3,
     }
@@ -121,7 +131,11 @@ pub fn execute_roots_only(frame: &mut Frame, code: &[u8]) {
     let instr = code[0];
     let instr = Instruction::try_from(instr).unwrap();
     match instr {
+        aconst_null => frame.push(1),
         iconst_m1 | iconst_0 | iconst_1 | iconst_2 | iconst_3 | iconst_4 | iconst_5 => {
+            frame.push(0);
+        }
+        lconst_0 | lconst_1 => {
             frame.push(0);
         }
         bipush | sipush => frame.push(0),
@@ -150,6 +164,7 @@ pub fn execute_roots_only(frame: &mut Frame, code: &[u8]) {
         imul => { frame.pop(); },
         iinc => {}
         i2l => {}
+        l2i => {}
         if_icmpge | if_icmpgt => { frame.pop(); frame.pop(); }
         goto => {}
         lreturn => {}
@@ -157,6 +172,10 @@ pub fn execute_roots_only(frame: &mut Frame, code: &[u8]) {
         getstatic => {}, // TODO: Depends on field type
         putstatic => { frame.pop(); }
         getfield => {} // TODO: Depends on method
+        putfield => {
+            frame.pop();
+            frame.pop();
+        } // TODO: Depends on method
         invokespecial => {} // TODO: Depends on method
         new => frame.push(1)
     }

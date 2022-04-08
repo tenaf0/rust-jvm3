@@ -1,6 +1,6 @@
 
 use std::ptr::{null, null_mut};
-use std::sync::atomic::AtomicU64;
+use std::sync::atomic::{AtomicU64, Ordering};
 use crate::Class;
 use crate::vm::class::class::ClassRef;
 
@@ -26,6 +26,16 @@ impl ObjectPtr {
         }
     }
 
+    pub fn from_val(val: u64) -> Option<ObjectPtr> {
+        if val == 0 {
+            None
+        } else {
+            Some(ObjectPtr {
+                ptr: val as *const AtomicU64
+            })
+        }
+    }
+
     pub fn get_class(&self) -> ClassRef {
         unsafe {
             let header: &ObjectHeader = &*self.ptr.cast();
@@ -34,7 +44,7 @@ impl ObjectPtr {
         }
     }
 
-    pub fn get_field(&self, field_no: usize) -> AtomicU64 {
+    pub fn get_field(&self, field_no: usize) -> u64 {
         let class = self.get_class();
         assert!(field_no < class.data.instance_field_count);
 
@@ -43,7 +53,20 @@ impl ObjectPtr {
         let ptr: *const AtomicU64 = ptr.cast();
 
         unsafe {
-            ptr.offset(field_no as isize).read()
+            ptr.offset(field_no as isize).read().load(Ordering::Relaxed)
+        }
+    }
+
+    pub fn put_field(&self, field_no: usize, val: u64) {
+        let class = self.get_class();
+        assert!(field_no < class.data.instance_field_count);
+
+        let mut ptr: *const ObjectHeader = self.ptr.cast();
+        ptr = unsafe { ptr.offset(1) };
+        let ptr: *const AtomicU64 = ptr.cast();
+
+        unsafe {
+            (*ptr.offset(field_no as isize)).store(val, Ordering::Relaxed);
         }
     }
 }
@@ -75,3 +98,18 @@ impl Default for ObjectHeader {
 
 unsafe impl Sync for ObjectHeader {}
 unsafe impl Send for ObjectHeader {}
+
+mod tests {
+    use crate::{VM, VM_HANDLER};
+
+    #[test]
+    fn object_field() {
+        let vm = VM_HANDLER.get_or_init(VM::init);
+
+        let obj = vm.object_arena.new(vm.string_class);
+        assert_eq!(obj.get_field(0), 0);
+
+        obj.put_field(0, 3);
+        assert_eq!(obj.get_field(0), 3);
+    }
+}

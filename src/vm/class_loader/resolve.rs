@@ -67,7 +67,9 @@ pub fn resolve(class: ClassRef, index: usize) -> Result<(), Exception> {
                         .find(|(_i, f)| &f.name == name && &f.descriptor == descriptor) {
                         class.set_cp_entry(index, ResolvedSymbolicReference(
                             SymbolicReference::FieldReference(*other_class, !field.is_static(),
-                                                              field_index)));
+                                                              other_class.data.superclass
+                                                                  .data.instance_field_count +
+                                                                  field_index)));
 
                         // TODO: Recursive lookup
 
@@ -158,8 +160,14 @@ pub fn initialize_class(class: ClassRef) -> Result<(), Exception> {
                 _ => panic!()
             }
 
+            println!("Initialized {}", class.data.name);
+
             Ok(())
         },
-        None => Ok(())
+        None => {
+            println!("Initialized {}", class.data.name);
+
+            Ok(())
+        }
     }
 }

@@ -107,6 +107,8 @@ pub enum CPInfo {
     Hole, // Used for marking an empty slot in the constant pool (for long, double)
 }
 
+#[derive(IntoPrimitive)]
+#[repr(u16)]
 #[allow(non_camel_case_types)]
 pub enum AccessFlagClass {
     ACC_PUBLIC = 0x0001,

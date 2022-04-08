@@ -45,11 +45,27 @@ impl VM {
             state: Mutex::new(ClassState::Ready),
             data: ClassRepr {
                 name: object_name.clone(),
+                flag: 0,
                 superclass: ClassRef::new(zero_ptr),
                 interfaces: Default::default(),
                 constant_pool: vec![],
                 fields: vec![],
-                methods: vec![],
+                methods: vec![
+                    Method {
+                        flag: 0,
+                        name: "<init>".to_string(),
+                        descriptor: MethodDescriptor { parameters: vec![], ret: FieldType::V },
+                        repr: MethodRepr::Jvm(JvmMethod {
+                            code: Some(Code {
+                                max_stack: 0,
+                                max_locals: 1,
+                                code: vec![
+                                    177
+                                ]
+                            })
+                        })
+                    }
+                ],
                 static_fields: Default::default(),
                 instance_field_count: 0
             }
@@ -68,6 +84,7 @@ impl VM {
             state: Mutex::new(ClassState::Ready),
             data: ClassRepr {
                 name: classloader_name.clone(),
+                flag: 0,
                 superclass: object_class,
                 interfaces: Default::default(),
                 constant_pool: vec![],
@@ -90,7 +107,7 @@ impl VM {
                             let index = string.get_field(0);
 
                             let vm = VM_HANDLER.get().unwrap();
-                            let string = &vm.string_pool.get(index.load(Ordering::Relaxed) as usize);
+                            let string = &vm.string_pool.get(index as usize);
                             let res = vm.load_class(string);
 
                             match res {
@@ -122,6 +139,7 @@ impl VM {
             state: Mutex::new(ClassState::Ready),
             data: ClassRepr {
                 name: string_name.clone(),
+                flag: 0,
                 superclass: object_class,
                 interfaces: Default::default(),
                 constant_pool: vec![],
@@ -360,13 +378,15 @@ impl VM {
             static_fields.push(AtomicU64::new(0));
         }
 
-        let instance_field_count = fields.len() - static_field_count;
+        let instance_field_count = superclass.data.instance_field_count + fields.len() -
+            static_field_count;
 
         let class = Class {
             header: ObjectHeader::default(),
             state: Mutex::new(ClassState::Verified), // TODO: Verification before giving this state
             data: ClassRepr {
                 name: class_name.clone(),
+                flag: parsed_class.access_flags,
                 superclass,
                 interfaces: Default::default(),
                 constant_pool,

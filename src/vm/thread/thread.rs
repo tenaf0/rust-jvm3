@@ -1,10 +1,11 @@
 use std::cmp::max;
-use std::ops::{Not};
-
-
+use std::fmt::format;
+use std::ops::{Deref, Not};
 use std::sync::atomic::{AtomicU64, Ordering};
 use smallvec::{SmallVec};
-use crate::{Class, VM_HANDLER};
+use crate::{Class, Method, VM_HANDLER};
+use crate::class_parser::constants::{AccessFlagClass, AccessFlagMethod};
+use crate::helper::has_flag;
 use crate::vm::class::class::ClassRef;
 use crate::vm::class::constant_pool::{CPEntry, SymbolicReference};
 use crate::vm::class::constant_pool::SymbolicReference::{FieldReference, MethodReference};
@@ -47,17 +48,22 @@ impl VMThread {
             frame.push(arg);
         }
 
+        self.stack.push(frame);
+
         self.status = RUNNING;
-        self.method(method_ref, &mut frame, arg_no);
+        self.method(method_ref, arg_no);
+
+        let frame = self.stack.last().unwrap();
+
         if frame.exception.is_none() {
             self.status = FINISHED(frame.safe_peek());
         } else {
-            let string = frame.exception.unwrap();
-            self.status = FAILED(string);
+            let string = frame.exception.as_ref().unwrap();
+            self.status = FAILED(string.clone());
         }
     }
 
-    fn method(&mut self, method_ref: MethodRef, prev_frame: &mut Frame, arg_no: usize) {
+    fn method(&mut self, method_ref: MethodRef, arg_no: usize) {
         let (class, method) = method_ref;
         let class = &*class;
         let method = &class.data.methods[method];
@@ -65,16 +71,36 @@ impl VMThread {
         match &method.repr {
             MethodRepr::Jvm(jvm_method) => {
                 if let Some(code) = &jvm_method.code {
-                    let frame = Frame::new(code.max_locals, code.max_stack);
-                    self.stack.push(frame);
-                    let _args = prev_frame.pop_args(arg_no);
-                    // TODO: Copy method args
+                    let mut frame = Frame::new(code.max_locals, code.max_stack);
 
-                    let frame = self.stack.last_mut().unwrap();
+                    let args = self.stack.last_mut().unwrap().pop_args(arg_no);
+                    let mut index = 0;
+                    let mut i = 0;
+                    if !method.is_static() {
+                        frame.set_d(index, args[i]);
+                        index += 1;
+                        i += 1;
+                    }
+                    for p in method.descriptor.parameters.iter() {
+                        match p {
+                            FieldType::D | FieldType::J => {
+                                frame.set_d(index, args[i]);
+                                index += 2;
+                            }
+                            _ => {
+                                frame.set_s(index, args[i] as u32);
+                                index += 1;
+                            }
+                        }
+                        i += 1;
+                    }
+
+                    self.stack.push(frame);
+
                     let mut result = None;
                     'outer: loop {
                         loop {
-                            let res = Self::interpreter_loop(&class, code, frame, &mut result);
+                            let res = self.interpreter_loop(&class, code, &mut result);
                             match res {
                                 InstructionResult::Continue => {}
                                 InstructionResult::Return => break 'outer
@@ -85,10 +111,13 @@ impl VMThread {
                     }
 
                     match result {
-                        Some(res) => prev_frame.push(res),
-                        None if method.descriptor.ret != FieldType::V => panic!("Method should \
-                        return a value!"),
-                        _ => {}
+                        Some(res) => {
+                            self.stack.pop();
+                            self.stack.last_mut().unwrap().push(res);
+                        },
+                        None if method.descriptor.ret != FieldType::V =>
+                            panic!("Method should return a value!"),
+                        _ => { self.stack.pop(); }
                     }
                 } else {
                     panic!("Executing method without code!");
@@ -96,6 +125,7 @@ impl VMThread {
             }
             MethodRepr::Native(native_method) => {
                 let fn_ptr = native_method.fn_ptr;
+                let prev_frame = self.stack.last_mut().unwrap();
                 let args = prev_frame.pop_args(arg_no);
                 let exception = &mut prev_frame.exception;
                 let res = fn_ptr(args, exception);
@@ -111,18 +141,24 @@ impl VMThread {
     }
 
     #[inline]
-    fn interpreter_loop(class: &Class, code: &Code, frame: &mut Frame, result: &mut Option<u64>) ->
+    fn interpreter_loop(&mut self, class: &Class, code: &Code, result: &mut Option<u64>) ->
                                                                                InstructionResult {
         use Instruction::*;
 
+        let frame = self.stack.last_mut().unwrap();
         let instr = code.code[frame.pc];
         let instruction = Instruction::try_from(instr).unwrap();
-        println!("{}: {:?}", frame.pc, instruction);
+        println!("{} {}: {:?}", class.data.name, frame.pc, instruction);
         match instruction {
+            aconst_null => frame.push(0),
             iconst_m1 | iconst_0 | iconst_1 | iconst_2 | iconst_3 | iconst_4
             | iconst_5 => {
                 let val = instr as isize - 3;
                 frame.push(val as u64);
+            }
+            lconst_0 | lconst_1 => {
+                let val = instr as u64 - 9;
+                frame.push(val);
             }
             bipush => {
                 let val = code.code[frame.pc + 1];
@@ -224,6 +260,11 @@ impl VMThread {
                 frame.set_s(index, (num + cons as i32) as u32);
             }
             i2l => {}
+            l2i => {
+                let val = frame.pop() as u32;
+
+                frame.push(val as u64)
+            }
             if_icmpge | if_icmpgt => {
                 let offset = i16::from_be_bytes(code.code[frame.pc + 1..frame.pc + 3].try_into()
                     .unwrap()) as isize;
@@ -296,7 +337,26 @@ impl VMThread {
                         let obj = frame.pop();
                         let obj = ObjectPtr { ptr: obj as *const AtomicU64 };
 
-                        frame.push(obj.get_field(*index).load(Ordering::Relaxed));
+                        frame.push(obj.get_field(*index));
+                    }
+                    _ => panic!("Unexpected pattern: {:?}", entry)
+                }
+            }
+            putfield => {
+                let index = u16::from_be_bytes(code.code[frame.pc + 1..frame.pc + 3].try_into()
+                    .unwrap());
+
+                resolve(ClassRef::new(class), index as usize);
+                let entry = class.get_cp_entry(index as usize);
+
+                let value = frame.pop();
+                let obj = frame.pop();
+
+                let obj = ObjectPtr::from_val(obj).unwrap();
+
+                match entry {
+                    CPEntry::ResolvedSymbolicReference(FieldReference(_class, true, index)) => {
+                        obj.put_field(*index, value);
                     }
                     _ => panic!("Unexpected pattern: {:?}", entry)
                 }
@@ -311,11 +371,13 @@ impl VMThread {
                 match entry {
                     CPEntry::ResolvedSymbolicReference(MethodReference(other_class, index)) => {
                         // TODO: other_class may differ if direct superclass
+                        let method = &other_class.data.methods[*index];
 
-                        frame.pop();
+                        let res = invoke_special(*other_class, method).unwrap();
 
+                        self.method(res, 1);
                     }
-                    _ => panic!("Unexpected pattern: {:?}", entry)
+                    _ => panic!()
                 }
             }
             new => {
@@ -336,12 +398,42 @@ impl VMThread {
                 }
             }
         }
-        println!("{:?}", frame);
+
+        for i in 0..self.stack.len() {
+            println!("{:?}", self.stack[i]);
+        }
 
         if [if_icmpge, if_icmpgt, goto].contains(&instruction).not() {
+            let frame = self.stack.last_mut().unwrap();
             frame.pc += instruction_length(instruction);
         }
 
         InstructionResult::Continue
     }
+}
+
+fn invoke_special(class: ClassRef, method: &Method) -> Result<MethodRef, String> {
+    // TODO: other_class may differ if direct superclass
+
+    let vm = VM_HANDLER.get().unwrap();
+
+    if let Some(res) = class.find_method(method.name.as_str(), &method.descriptor) {
+        return Ok(res)
+    } else if !class.is_interface() &&
+        !class.data.superclass.ptr().is_null() {
+        return invoke_special(class.data.superclass, method)
+    }
+
+    if class.is_interface() {
+        if let Some(res) = vm.object_class.find_method(method.name.as_str(),
+                                                       &method.descriptor) {
+            if has_flag(res.0.data.methods[res.1].flag, AccessFlagMethod::ACC_PUBLIC) {
+                return Ok(res);
+            }
+        }
+    }
+
+    // TODO: Maximally specific non-abstract interface-method
+
+    Err(format!("Could not resolve method"))
 }

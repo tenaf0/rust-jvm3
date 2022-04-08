@@ -38,7 +38,6 @@ impl StringPool {
             string: value.to_string()
         };
 
-        println!("{:?}", string_object);
         pool.push(string_object);
 
         pool.len()-1
@@ -95,7 +94,7 @@ mod tests {
         assert_eq!(pool.pool.read().unwrap().len(), 1);
 
         let ptr2 = pool.add_string("string2");
-        let index = ptr2.get_field(0).load(Ordering::Relaxed);
+        let index = ptr2.get_field(0);
         assert_eq!(pool.pool.read().unwrap().len(), 2);
         assert_eq!(&*pool.get(index as usize), "string2");
 
@@ -104,7 +103,7 @@ mod tests {
         assert_eq!(pool.interned_string.read().unwrap().len(), 1);
         assert_eq!(ptr1.ptr, ptr3.ptr);
 
-        let index = ptr3.get_field(0).load(Ordering::Relaxed);
+        let index = ptr3.get_field(0);
         assert_eq!(&*pool.get(index as usize), "string1");
     }
 }

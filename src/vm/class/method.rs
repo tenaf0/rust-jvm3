@@ -1,6 +1,7 @@
 use std::fmt::{Debug, Formatter};
 use smallvec::SmallVec;
 use crate::class_parser::constants::AccessFlagMethod;
+use crate::ClassRef;
 use crate::helper::has_flag;
 use crate::vm::class::field::FieldType;
 
@@ -21,6 +22,10 @@ pub struct Method {
 impl Method {
     pub fn is_static(&self) -> bool {
         has_flag(self.flag, AccessFlagMethod::ACC_STATIC)
+    }
+
+    pub fn is_instance_init(&self, defining_class: ClassRef) -> bool {
+        !defining_class.is_interface() && self.name == "<init>" && self.descriptor.ret == FieldType::V
     }
 }
 

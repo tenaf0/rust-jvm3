@@ -18,6 +18,7 @@ pub struct VM {
     pub object_arena: ObjectArena,
     pub string_pool: StringPool,
 
+    pub object_class: ClassRef,
     pub classloader: ClassRef,
     pub string_class: ClassRef
 }
@@ -30,12 +31,14 @@ impl VM {
             object_arena: Default::default(),
             string_pool: Default::default(),
 
+            object_class: ClassRef::new(null()),
             classloader: ClassRef::new(null()),
             string_class: ClassRef::new(null())
         };
 
         vm.load_bootstrap_classes();
 
+        vm.object_class = ClassRef::new(&*vm.classes.lock().unwrap()[0]);
         vm.classloader = ClassRef::new(&*vm.classes.lock().unwrap()[1]);
         vm.string_class = ClassRef::new(&*vm.classes.lock().unwrap()[2]);
 
