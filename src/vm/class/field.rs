@@ -16,6 +16,22 @@ pub enum FieldType {
     V
 }
 
+impl FieldType {
+    pub fn convert_newarray_type(index: u8) -> &'static str {
+        match index {
+            4 => "[Z",
+            5 => "[C",
+            6 => "[F",
+            7 => "[D",
+            8 => "[B",
+            9 => "[S",
+            10 => "[I",
+            11 => "[J",
+            _ => panic!()
+        }
+    }
+}
+
 #[derive(Debug, PartialEq)]
 pub struct Field {
     pub flag: u16,

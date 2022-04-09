@@ -46,20 +46,20 @@ impl ObjectPtr {
 
     pub fn get_field(&self, field_no: usize) -> u64 {
         let class = self.get_class();
-        assert!(field_no < class.data.instance_field_count);
+        assert!(field_no < class.data.instance_field_count || (field_no == 0 && class.is_array()));
 
         let mut ptr: *const ObjectHeader = self.ptr.cast();
         ptr = unsafe { ptr.offset(1) };
         let ptr: *const AtomicU64 = ptr.cast();
 
         unsafe {
-            ptr.offset(field_no as isize).read().load(Ordering::Relaxed)
+            (*ptr.offset(field_no as isize)).load(Ordering::Relaxed)
         }
     }
 
     pub fn put_field(&self, field_no: usize, val: u64) {
         let class = self.get_class();
-        assert!(field_no < class.data.instance_field_count);
+        assert!(field_no < class.data.instance_field_count || (field_no == 0 && class.is_array()));
 
         let mut ptr: *const ObjectHeader = self.ptr.cast();
         ptr = unsafe { ptr.offset(1) };
@@ -67,6 +67,32 @@ impl ObjectPtr {
 
         unsafe {
             (*ptr.offset(field_no as isize)).store(val, Ordering::Relaxed);
+        }
+    }
+
+    pub fn get_from_array(&self, index: usize) -> u64 {
+        let length = self.get_field(0);
+        assert!(index <= length as usize);
+
+        let mut ptr: *const ObjectHeader = self.ptr.cast();
+        ptr = unsafe { ptr.offset(1) };
+        let ptr: *const AtomicU64 = ptr.cast();
+
+        unsafe {
+            (*ptr.offset(1 + index as isize)).load(Ordering::Relaxed)
+        }
+    }
+
+    pub fn store_to_array(&self, index: usize, val: u64) {
+        let length = self.get_field(0);
+        assert!(index <= length as usize);
+
+        let mut ptr: *const ObjectHeader = self.ptr.cast();
+        ptr = unsafe { ptr.offset(1) };
+        let ptr: *const AtomicU64 = ptr.cast();
+
+        unsafe {
+            (*ptr.offset(1 + index as isize)).store(val, Ordering::Relaxed)
         }
     }
 }
@@ -103,7 +129,7 @@ mod tests {
     use crate::{VM, VM_HANDLER};
 
     #[test]
-    fn object_field() {
+    fn object_test() {
         let vm = VM_HANDLER.get_or_init(VM::init);
 
         let obj = vm.object_arena.new(vm.string_class);
@@ -111,5 +137,25 @@ mod tests {
 
         obj.put_field(0, 3);
         assert_eq!(obj.get_field(0), 3);
+    }
+
+    #[test]
+    fn array_test() {
+        let vm = VM_HANDLER.get_or_init(VM::init);
+
+        let class = vm.load_class("[I").unwrap();
+
+        let obj = vm.object_arena.new_array(class, 32);
+        for i in 0..32 {
+            assert_eq!(obj.get_from_array(i), 0);
+        }
+
+        for i in 0..32 {
+            obj.store_to_array(i, i as u64);
+        }
+
+        for i in 0..32 {
+            assert_eq!(obj.get_from_array(i), i as u64);
+        }
     }
 }

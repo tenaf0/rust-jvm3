@@ -18,6 +18,7 @@ use crate::vm::class::constant_pool::{CPEntry, UnresolvedReference};
 use crate::vm::class::constant_pool::CPEntry::{ConstantString, ConstantValue, UnresolvedSymbolicReference};
 use crate::vm::class::field::{Field, FieldType};
 use crate::vm::class::method::{Code, JvmMethod, MethodDescriptor, MethodRepr, NativeMethod};
+use crate::vm::class_loader::array::create_primitive_array_class;
 use crate::vm::object::ObjectPtr;
 
 use crate::vm::thread::thread::ThreadStatus;
@@ -163,6 +164,20 @@ impl VM {
             class_list.insert(string_name,
                               string_class);
         }
+
+        {
+            use FieldType::*;
+
+            for t in [B, C, F, D, Z, S, I, J] {
+                let class_data = create_primitive_array_class(t).unwrap();
+                let class = self.add_class(class_data);
+
+                {
+                    let mut class_list = self.bootstrap_cl_class_list.lock().unwrap();
+                    class_list.insert(class.data.name.clone(), class);
+                }
+            }
+        }
     }
 
     pub fn find_loaded_class(&self, name: &str) -> Option<ClassRef> {   // TODO: To support
@@ -177,6 +192,10 @@ impl VM {
             return Ok(class);
         }
 
+        if name.starts_with("[") {
+            return self.load_array_class(name);
+        }
+
         let mut file = find_class_file(name, "./jdk/target")?;
         let mut buf = Vec::with_capacity(INITIAL_CLASS_BUFFER_SIZE);
         file.read_to_end(&mut buf).map_err(|e| e.to_string())?;
@@ -189,6 +208,36 @@ impl VM {
             let mut class_list = self.bootstrap_cl_class_list.lock().unwrap();
             class_list.insert(class.data.name.clone(),
                               class);
+        }
+
+        Ok(class)
+    }
+
+    fn load_array_class(&self, name: &str) -> Result<ClassRef, Exception> {
+        let component_class = self.load_class(&name[1..])?;
+
+        let class = Class {
+            header: Default::default(),
+            state: Mutex::new(ClassState::Verified),
+            data: ClassRepr {
+                name: name.to_string(),
+                flag: component_class.data.flag,
+                superclass: ClassRef::new(null()),
+                interfaces: Default::default(),
+                constant_pool: vec![],
+                fields: vec![],
+                methods: vec![],
+                static_fields: Default::default(),
+                instance_field_count: 0
+            }
+        };
+
+
+        let class = self.add_class(class);
+
+        {
+            let mut class_list = self.bootstrap_cl_class_list.lock().unwrap();
+            class_list.insert(class.data.name.clone(), class);
         }
 
         Ok(class)

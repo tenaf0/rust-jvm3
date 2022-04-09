@@ -41,6 +41,10 @@ impl Class {
         self.data.methods.iter().enumerate().find(|(_, m)| m.name == name
             && &m.descriptor == descriptor).map(|(i, _)| (ClassRef::new(self), i))
     }
+
+    pub fn is_array(&self) -> bool {
+        self.data.name.starts_with('[')
+    }
 }
 
 unsafe impl Sync for Class {}

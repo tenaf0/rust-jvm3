@@ -9,7 +9,6 @@ use crate::vm::object::ObjectPtr;
 #[derive(Debug)]
 pub struct ObjectArena {
     last_index: AtomicUsize,
-    lock: Mutex<bool>,
     arena: *mut AtomicU64,
     cap: AtomicUsize
 }
@@ -17,24 +16,48 @@ pub struct ObjectArena {
 unsafe impl Sync for ObjectArena {}
 unsafe impl Send for ObjectArena {}
 
-impl ObjectArena {
-    pub fn new(&self, class: ClassRef) -> ObjectPtr {
-        self.lock.lock().unwrap();
+const HEADER_SIZE: usize = std::mem::size_of::<ObjectHeader>();
+const HEADER_ALIGN: usize = std::mem::align_of::<ObjectHeader>();
 
-        let mut val = self.last_index.load(Ordering::Relaxed) as isize;
-        let ptr = unsafe { self.arena.offset(val ) };
+impl ObjectArena {
+    fn calc_align(size: usize) -> usize {
+        let size = HEADER_SIZE + size * std::mem::size_of::<AtomicU64>();
+        let i = size / HEADER_ALIGN;
+
+        let total_size = i * HEADER_ALIGN;
+
+        if size > total_size {
+            (total_size + HEADER_ALIGN) / std::mem::size_of::<AtomicU64>()
+        } else {
+            total_size / std::mem::size_of::<AtomicU64>()
+        }
+    }
+
+    pub fn new(&self, class: ClassRef) -> ObjectPtr {
+        self.allocate_object(class, class.data.instance_field_count)
+    }
+
+    pub fn new_array(&self, class: ClassRef, length: usize) -> ObjectPtr {
+        let obj = self.allocate_object(class, length + 1);
+        obj.put_field(0, length as u64);
+        obj
+    }
+
+    fn allocate_object(&self, class: ClassRef, size: usize) -> ObjectPtr {
+        let size = Self::calc_align(size);
+        let offset = self.last_index.fetch_add(size, Ordering::AcqRel);
+
+        println!("Allocating object of size {}", size);
+
+        let ptr = unsafe { self.arena.offset(offset as isize ) };
         let mut header: *mut ObjectHeader = ptr.cast();
         unsafe { *header = ObjectHeader::new(class.ptr()); }
         header = unsafe { header.offset(1)};
+
         let field_ptr: *mut AtomicU64 = header.cast();
-
-        for i in 0..class.data.instance_field_count {
-            unsafe { *field_ptr.offset(i as isize) = AtomicU64::new(0);}
+        for i in 0..size {
+            unsafe { *field_ptr.offset(i as isize) = AtomicU64::new(0); }
         }
-
-        let i = (std::mem::size_of::<ObjectHeader>() / 8) as isize;
-        val += class.data.instance_field_count as isize + i;
-        self.last_index.store(val as usize, Ordering::Relaxed);
 
         ObjectPtr { ptr }
     }
@@ -42,7 +65,7 @@ impl ObjectArena {
 
 impl Default for ObjectArena {
     fn default() -> Self {
-        let layout = Layout::array::<AtomicU64>(1000*256).unwrap();
+        let layout = Layout::array::<AtomicU64>(10*1024*1024).unwrap();
         let ptr = unsafe { alloc::alloc(layout) } as *mut AtomicU64;
 
         if ptr.is_null() {
@@ -51,7 +74,6 @@ impl Default for ObjectArena {
 
         ObjectArena {
             last_index: AtomicUsize::new(0),
-            lock: Mutex::new(false),
             arena: ptr,
             cap: Default::default()
         }

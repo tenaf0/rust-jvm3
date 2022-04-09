@@ -148,7 +148,7 @@ impl VMThread {
         let frame = self.stack.last_mut().unwrap();
         let instr = code.code[frame.pc];
         let instruction = Instruction::try_from(instr).unwrap();
-        println!("{} {}: {:?}", class.data.name, frame.pc, instruction);
+        // println!("{} {}: {:?}", class.data.name, frame.pc, instruction);
         match instruction {
             aconst_null => frame.push(0),
             iconst_m1 | iconst_0 | iconst_1 | iconst_2 | iconst_3 | iconst_4
@@ -176,9 +176,10 @@ impl VMThread {
 
                 match *entry {
                     CPEntry::ConstantString(ptr) => frame.push(ptr.ptr as u64),
-                    _ => panic!("")
+                    CPEntry::ConstantValue(val) => frame.push((val as u32) as u64),
+                    // TODO: Reference to class/method can also be loaded
+                    _ => panic!("Unexpected entry {:?}", entry)
                 }
-                println!("Entry: {:?}", entry);
             }
             ldc2_w => {
                 let val = u16::from_be_bytes(code.code[frame.pc + 1..frame.pc + 3].try_into()
@@ -190,7 +191,6 @@ impl VMThread {
                     CPEntry::ConstantValue(val) => frame.push(val),
                     _ => panic!("")
                 }
-                println!("Entry: {:?}", entry);
             }
             istore => {
                 let val = frame.pop() as u32;
@@ -200,6 +200,11 @@ impl VMThread {
             istore_0 | istore_1 | istore_2 | istore_3 => {
                 let val = frame.pop() as u32;
                 frame.set_s(instr as usize - 59, val);
+            }
+            iload => {
+                let index = code.code[frame.pc + 1];
+                let val = frame.get_s(index as usize);
+                frame.push(val as u64);
             }
             iload_0 | iload_1 | iload_2 | iload_3 => {
                 let val = frame.get_s(instr as usize - 26);
@@ -214,11 +219,26 @@ impl VMThread {
 
                 frame.push(objectref);
             }
+            iaload => {
+                let index = frame.pop();
+                let obj = frame.pop();
+                let obj = ObjectPtr::from_val(obj).unwrap();
+
+                frame.push(obj.get_from_array(index as usize));
+            }
             lstore_0| lstore_1| lstore_2 => todo!(),
             astore_0 | astore_1 | astore_2 | astore_3 => {
                 let objectref = frame.pop();
 
                 frame.set_d(instr as usize - 75, objectref);
+            }
+            iastore => {
+                let val = frame.pop();
+                let index = frame.pop();
+                let obj = frame.pop();
+                let obj = ObjectPtr::from_val(obj).unwrap();
+
+                obj.store_to_array(index as usize, val);
             }
             dup => {
                 let val = frame.safe_peek().unwrap();
@@ -264,6 +284,21 @@ impl VMThread {
                 let val = frame.pop() as u32;
 
                 frame.push(val as u64)
+            }
+            ifne => {
+                let offset = i16::from_be_bytes(code.code[frame.pc + 1..frame.pc + 3].try_into()
+                    .unwrap()) as isize;
+
+                let a = frame.pop() as i32;
+                let cmp = match instruction {
+                    ifne => a != 0,
+                    _ => panic!()
+                };
+                if cmp {
+                    frame.pc = (frame.pc as isize + offset) as usize;
+                } else {
+                    frame.pc += instruction_length(instruction);
+                }
             }
             if_icmpge | if_icmpgt => {
                 let offset = i16::from_be_bytes(code.code[frame.pc + 1..frame.pc + 3].try_into()
@@ -418,13 +453,30 @@ impl VMThread {
                     _ => panic!("Unexpected pattern: {:?}", entry)
                 }
             }
+            newarray => {
+                let atype = code.code[frame.pc + 1];
+                let name = FieldType::convert_newarray_type(atype);
+                let length = frame.pop();
+
+                let vm = VM_HANDLER.get().unwrap();
+                let array_class = vm.load_class(name).unwrap();
+
+                let object = vm.object_arena.new_array(array_class, length as usize);
+                frame.push(object.ptr as u64);
+            }
+            anewarray => todo!(),
+            arraylength => {
+                let obj = frame.pop();
+                let obj = ObjectPtr::from_val(obj).unwrap();
+                frame.push(obj.get_field(0));
+            }
         }
 
-        for i in 0..self.stack.len() {
+        /*for i in 0..self.stack.len() {
             println!("{:?}", self.stack[i]);
-        }
+        }*/
 
-        if [if_icmpge, if_icmpgt, goto].contains(&instruction).not() {
+        if instr < 153 || instr > 167 {
             let frame = self.stack.last_mut().unwrap();
             frame.pc += instruction_length(instruction);
         }
