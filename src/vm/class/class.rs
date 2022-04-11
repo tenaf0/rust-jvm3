@@ -11,7 +11,7 @@ use crate::helper::has_flag;
 use crate::vm::class::constant_pool::CPEntry;
 use crate::vm::class::field::Field;
 use crate::vm::class::method::{Method, MethodDescriptor};
-use crate::vm::object::ObjectHeader;
+use crate::vm::object::{ObjectHeader, ObjectPtr};
 use crate::vm::thread::thread::MethodRef;
 
 #[derive(Debug, PartialEq)]
@@ -44,6 +44,14 @@ impl Class {
 
     pub fn is_array(&self) -> bool {
         self.data.name.starts_with('[')
+    }
+
+    pub fn get_package(&self) -> (ObjectPtr, String) {
+        let rightmost_slash = self.data.name.rfind('/');
+        match rightmost_slash {
+            None => (ObjectPtr::null(), "".to_string()),
+            Some(i) => (ObjectPtr::null(), String::from(&self.data.name[0..i]))
+        }
     }
 }
 
@@ -101,3 +109,15 @@ impl Deref for ClassRef {
 
 unsafe impl Sync for ClassRef {}
 unsafe impl Send for ClassRef {}
+
+mod tests {
+    use std::sync::atomic::Ordering;
+    use crate::{VM, VM_HANDLER};
+
+    #[test]
+    fn get_package_name() {
+        let _vm = VM_HANDLER.get_or_init(VM::init);
+
+        assert_eq!("java/lang", _vm.object_class.get_package().1);
+    }
+}

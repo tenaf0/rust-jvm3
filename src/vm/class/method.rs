@@ -5,7 +5,7 @@ use crate::ClassRef;
 use crate::helper::has_flag;
 use crate::vm::class::field::FieldType;
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Eq, Hash, Clone)]
 pub struct MethodDescriptor {
     pub parameters: Vec<FieldType>,
     pub ret: FieldType
@@ -24,8 +24,32 @@ impl Method {
         has_flag(self.flag, AccessFlagMethod::ACC_STATIC)
     }
 
+    pub fn is_public(&self) -> bool {
+        has_flag(self.flag, AccessFlagMethod::ACC_PUBLIC)
+    }
+
+    pub fn is_protected(&self) -> bool {
+        has_flag(self.flag, AccessFlagMethod::ACC_PROTECTED)
+    }
+
+    pub fn is_private(&self) -> bool {
+        has_flag(self.flag, AccessFlagMethod::ACC_PRIVATE)
+    }
+
     pub fn is_instance_init(&self, defining_class: ClassRef) -> bool {
         !defining_class.is_interface() && self.name == "<init>" && self.descriptor.ret == FieldType::V
+    }
+
+    pub fn can_override(&self, self_class: ClassRef, other_method: &Method, other_class: ClassRef)
+        -> bool {
+        self.name == other_method.name && self.descriptor == other_method.descriptor
+        && !self.is_private()
+        && (other_method.is_public() || other_method.is_protected() || (
+            !other_method.is_public() && !other_method.is_protected() && !other_method.is_private()
+            && (
+                self_class.get_package() == other_class.get_package() // TODO: transitive access
+                )
+            ))
     }
 }
 
@@ -42,7 +66,8 @@ pub struct JvmMethod {
 
 pub const MAX_NO_OF_ARGS: usize = 64;
 
-type NativeFnPtr = fn(SmallVec<[u64; MAX_NO_OF_ARGS]>, exception: &mut Option<String>) -> Option<u64>;
+pub type NativeFnPtr = fn(ClassRef, SmallVec<[u64; MAX_NO_OF_ARGS]>,
+                          exception: &mut Option<String>) -> Option<u64>;
 
 pub struct NativeMethod {
     pub fn_ptr: NativeFnPtr

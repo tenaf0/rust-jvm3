@@ -1,7 +1,7 @@
 use crate::class_parser::constants::AccessFlagField;
 use crate::helper::has_flag;
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Eq, Hash, Clone)]
 pub enum FieldType {
     B,
     C,

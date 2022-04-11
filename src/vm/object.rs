@@ -10,7 +10,7 @@ use crate::vm::class::class::ClassRef;
 ///     header: ObjectHeader,
 ///     data: [u64, FIELD_NO]
 /// }
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 #[repr(transparent)]
 pub struct ObjectPtr {
     pub ptr: *const AtomicU64

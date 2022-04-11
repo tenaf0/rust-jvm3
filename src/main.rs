@@ -22,7 +22,7 @@ fn main() {
         let c = vm.classloader;
         println!("{:?}", c);
 
-        let ptr = vm.string_pool.intern_string("hu.garaba.Main");
+        let ptr = vm.string_pool.intern_string("hu.garaba.Virtual");
 
         thread.start((c, 0), smallvec![0, ptr.ptr as u64]);
         if let ThreadStatus::FINISHED(Some(class)) = thread.status {
@@ -41,7 +41,7 @@ fn main() {
             });
 
             if let Some((i, _method)) = main_method {
-                thread.start((ClassRef::new(ptr), i), smallvec![]);
+                thread.start((ClassRef::new(ptr), i), smallvec![0]);
                 println!("{:?}", thread.status);
             }
         } else {

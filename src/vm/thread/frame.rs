@@ -101,5 +101,29 @@ impl Frame {
 
         args
     }
+
+    pub fn peek_nth(&self, index: usize) -> u64 {
+        unsafe { self.data[self.stack_top-index-1].assume_init() }
+    }
+}
+
+mod test {
+    use crate::vm::thread::frame::Frame;
+
+    #[test]
+    fn test_peek() {
+        let mut frame = Frame::new(2, 3);
+
+        frame.push(1);
+        frame.push(2);
+        frame.push(3);
+
+        assert_eq!(frame.peek_nth(0), 3);
+        assert_eq!(frame.peek_nth(1), 2);
+
+        frame.pop();
+
+        assert_eq!(frame.peek_nth(1), 1);
+    }
 }
 

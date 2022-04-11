@@ -5,6 +5,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use smallvec::{SmallVec};
 use crate::{Class, Method, VM_HANDLER};
 use crate::class_parser::constants::{AccessFlagClass, AccessFlagMethod};
+use crate::class_parser::constants::AccessFlagField::ACC_PRIVATE;
 use crate::helper::has_flag;
 use crate::vm::class::class::ClassRef;
 use crate::vm::class::constant_pool::{CPEntry, SymbolicReference};
@@ -20,6 +21,8 @@ use crate::vm::thread::thread::ThreadStatus::{FAILED, FINISHED, RUNNING};
 pub type MethodRef = (ClassRef, usize);
 
 const STACK_SIZE: usize = 36;
+
+const PRINT_TRACE: bool = false;
 
 #[derive(Debug)]
 pub enum ThreadStatus {
@@ -67,6 +70,8 @@ impl VMThread {
         let (class, method) = method_ref;
         let class = &*class;
         let method = &class.data.methods[method];
+
+        println!("{}:{} {:?}", class.data.name, method.name, method.descriptor);
 
         match &method.repr {
             MethodRepr::Jvm(jvm_method) => {
@@ -128,12 +133,13 @@ impl VMThread {
                 let prev_frame = self.stack.last_mut().unwrap();
                 let args = prev_frame.pop_args(arg_no);
                 let exception = &mut prev_frame.exception;
-                let res = fn_ptr(args, exception);
+                let res = fn_ptr(ClassRef::new(class), args, exception);
 
-                match res {
-                    Some(res) if prev_frame.exception.is_none() => prev_frame.push(res),
-                    None if method.descriptor.ret != FieldType::V => panic!("Method should \
-                        return a value!"),
+                match (res, exception) {
+                    (_, Some(e)) => panic!("Exception occured: {:?}", e),
+                    (Some(res), _)  => prev_frame.push(res),
+                    (None, _) if method.descriptor.ret != FieldType::V =>
+                        panic!("Method {:?} should return a value!", method),
                     _ => {}
                 }
             }
@@ -148,7 +154,10 @@ impl VMThread {
         let frame = self.stack.last_mut().unwrap();
         let instr = code.code[frame.pc];
         let instruction = Instruction::try_from(instr).unwrap();
-        // println!("{} {}: {:?}", class.data.name, frame.pc, instruction);
+
+        if PRINT_TRACE {
+            println!("{}: {:?}", frame.pc, instruction);
+        }
         match instruction {
             aconst_null => frame.push(0),
             iconst_m1 | iconst_0 | iconst_1 | iconst_2 | iconst_3 | iconst_4
@@ -197,6 +206,11 @@ impl VMThread {
                 let index = code.code[frame.pc + 1];
                 frame.set_s(index as usize, val);
             }
+            astore => {
+                let val = frame.pop();
+                let index = code.code[frame.pc + 1];
+                frame.set_d(index as usize, val);
+            }
             istore_0 | istore_1 | istore_2 | istore_3 => {
                 let val = frame.pop() as u32;
                 frame.set_s(instr as usize - 59, val);
@@ -205,6 +219,11 @@ impl VMThread {
                 let index = code.code[frame.pc + 1];
                 let val = frame.get_s(index as usize);
                 frame.push(val as u64);
+            }
+            aload => {
+                let index = code.code[frame.pc + 1];
+                let val = frame.get_d(index as usize);
+                frame.push(val);
             }
             iload_0 | iload_1 | iload_2 | iload_3 => {
                 let val = frame.get_s(instr as usize - 26);
@@ -226,7 +245,7 @@ impl VMThread {
 
                 frame.push(obj.get_from_array(index as usize));
             }
-            lstore_0| lstore_1| lstore_2 => todo!(),
+            lstore_0 | lstore_1 | lstore_2 => todo!(),
             astore_0 | astore_1 | astore_2 | astore_3 => {
                 let objectref = frame.pop();
 
@@ -400,6 +419,31 @@ impl VMThread {
                     _ => panic!("Unexpected pattern: {:?}", entry)
                 }
             }
+            invokevirtual => {
+                let index = u16::from_be_bytes(code.code[frame.pc + 1..frame.pc + 3].try_into()
+                    .unwrap());
+
+                resolve(ClassRef::new(class), index as usize);
+                let entry = class.get_cp_entry(index as usize);
+
+                match entry {
+                    CPEntry::ResolvedSymbolicReference(MethodReference(other_class, index)) => {
+                        let method = &other_class.data.methods[*index];
+
+                        let arg_no = method.descriptor.parameters.len();
+
+                        let obj = frame.peek_nth(arg_no);
+                        let obj = ObjectPtr::from_val(obj).unwrap(); // TODO: NPE
+                        let obj_class = obj.get_class();
+
+                        let res = invoke_virtual(obj_class, *other_class, (*other_class, *index))
+                            .unwrap();
+
+                        self.method(res, arg_no + 1);
+                    }
+                    _ => panic!()
+                }
+            }
             invokespecial => {
                 let index = u16::from_be_bytes(code.code[frame.pc + 1..frame.pc + 3].try_into()
                     .unwrap());
@@ -446,10 +490,10 @@ impl VMThread {
                 match *entry {
                     CPEntry::ResolvedSymbolicReference(
                         SymbolicReference::ClassReference(other_class)) => {
-                            // TODO: It should not be an abstract class
-                            let object = VM_HANDLER.get().unwrap().object_arena.new(other_class);
-                            frame.push(object.ptr as u64);
-                        }
+                        // TODO: It should not be an abstract class
+                        let object = VM_HANDLER.get().unwrap().object_arena.new(other_class);
+                        frame.push(object.ptr as u64);
+                    }
                     _ => panic!("Unexpected pattern: {:?}", entry)
                 }
             }
@@ -472,9 +516,11 @@ impl VMThread {
             }
         }
 
-        /*for i in 0..self.stack.len() {
-            println!("{:?}", self.stack[i]);
-        }*/
+        if PRINT_TRACE {
+            for i in 0..self.stack.len() {
+                println!("{:?}", self.stack[i]);
+            }
+        }
 
         if instr < 153 || instr > 167 {
             let frame = self.stack.last_mut().unwrap();
@@ -509,4 +555,22 @@ fn invoke_special(class: ClassRef, method: &Method) -> Result<MethodRef, String>
     // TODO: Maximally specific non-abstract interface-method
 
     Err(format!("Could not resolve method"))
+}
+
+fn invoke_virtual(class: ClassRef, resolved_class: ClassRef, method_ref: MethodRef) ->
+                                                                                Result<MethodRef, String> {
+    let method = &method_ref.0.data.methods[method_ref.1];
+    if method.is_private() {
+        return Ok(method_ref);
+    }
+
+    let search = class.data.methods.iter().enumerate()
+        .find(|(i, m)| m.can_override(class, method, resolved_class));
+    if let Some((i, m)) = search {
+        return Ok((class, i));
+    } else {
+        return invoke_virtual(class.data.superclass, resolved_class, method_ref);
+    }
+
+    // TODO: Maximally specific superinterface
 }

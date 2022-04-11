@@ -9,16 +9,19 @@ use std::sync::{Mutex};
 use std::sync::atomic::{AtomicU64, Ordering};
 use smallvec::{smallvec, SmallVec};
 use crate::{Class, ClassRepr, get_cp_info, Method, ObjectHeader, VM, VM_HANDLER, VMThread};
-use crate::class_parser::constants::CPInfo;
+use crate::class_parser::constants::{AccessFlagMethod, CPInfo};
 use crate::class_parser::parse_class;
 use crate::class_parser::types::ParsedClass;
 use crate::class_parser::constants::CPTag;
+use crate::helper::has_flag;
 use crate::vm::class::class::{ClassRef, ClassState};
 use crate::vm::class::constant_pool::{CPEntry, UnresolvedReference};
 use crate::vm::class::constant_pool::CPEntry::{ConstantString, ConstantValue, UnresolvedSymbolicReference};
 use crate::vm::class::field::{Field, FieldType};
 use crate::vm::class::method::{Code, JvmMethod, MethodDescriptor, MethodRepr, NativeMethod};
+use crate::vm::class::method::MethodRepr::Native;
 use crate::vm::class_loader::array::create_primitive_array_class;
+use crate::vm::class_loader::native::{init_native_store, NATIVE_FN_STORE, NativeMethodRef};
 use crate::vm::object::ObjectPtr;
 
 use crate::vm::thread::thread::ThreadStatus;
@@ -99,7 +102,7 @@ impl VM {
                                 FieldType::L("java/lang/ClassLoader".to_string()),
                                 FieldType::L("java/lang/String".to_string())],
                             ret: FieldType::L("java/lang/Class".to_string()) },
-                        repr: MethodRepr::Native(NativeMethod { fn_ptr: |args, exc| {
+                        repr: MethodRepr::Native(NativeMethod { fn_ptr: |class, args, exc| {
                             // first argument is the bootstrap class loader (null), second is a
                             // String object which denotes the name of the class that should be loaded
 
@@ -187,10 +190,11 @@ impl VM {
     }
 
     pub fn load_class(&self, name: &str) -> Result<ClassRef, Exception> {
-        println!("Started loading class: {}", name);
         if let Some(class) = self.find_loaded_class(name) {
             return Ok(class);
         }
+
+        println!("Started loading class: {}", name);
 
         if name.starts_with("[") {
             return self.load_array_class(name);
@@ -320,7 +324,8 @@ impl VM {
         Ok(())
     }
 
-    fn load_methods(parsed_class: &ParsedClass, methods: &mut Vec<Method>) -> Result<()
+    fn load_methods(parsed_class: &ParsedClass, class_name: &str, methods: &mut Vec<Method>) ->
+                                                                                         Result<()
         , Exception> {
         for m in &parsed_class.methods {
             let name = get_cp_info!(parsed_class, m.name_index, CPTag::Utf8, CPInfo::Utf8(str),
@@ -347,13 +352,33 @@ impl VM {
                 }
             }
 
+            let repr = if has_flag(m.access_flags, AccessFlagMethod::ACC_NATIVE) {
+                let native_store = NATIVE_FN_STORE.get_or_init(|| init_native_store());
+
+                let method_ref = NativeMethodRef {
+                    class_name: class_name.to_string(),
+                    method_name: name.clone(),
+                    descriptor: descriptor.clone()
+                };
+                match native_store.get(&method_ref) {
+                    Some(res) => {
+                        Ok(Native(NativeMethod { fn_ptr: *res }))
+                    }
+                    None => Err(format!("Could not resolve native method {}", name))
+                }
+            } else {
+                Ok(MethodRepr::Jvm(
+                    JvmMethod {
+                        code
+                    }
+                ))
+            };
+
             methods.push(Method {
                 flag: m.access_flags,
                 name,
                 descriptor,
-                repr: MethodRepr::Jvm(
-                    JvmMethod { code }
-                ),
+                repr: repr?,
             });
         }
 
@@ -412,11 +437,8 @@ impl VM {
             _ => panic!("Can't happen")
         }
 
-        // println!("{:#?}", constant_pool);
-        println!("{:?}", *superclass);
-
         let mut methods = Vec::with_capacity(parsed_class.methods.len());
-        VM::load_methods(&parsed_class, &mut methods)?;
+        VM::load_methods(&parsed_class, class_name, &mut methods)?;
 
         let mut fields = Vec::with_capacity(parsed_class.fields.len());
         VM::load_fields(&parsed_class, &mut fields)?;

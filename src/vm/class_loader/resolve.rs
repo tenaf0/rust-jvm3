@@ -3,12 +3,17 @@
 use std::thread;
 use smallvec::smallvec;
 use crate::{Class, ClassRef, VM_HANDLER, VMThread};
+use crate::class_parser::constants::AccessFlagMethod;
+use crate::helper::has_flag;
 use crate::ThreadStatus::{FAILED, FINISHED};
 use crate::vm::class::class::ClassState;
 use crate::vm::class::constant_pool::{CPEntry, SymbolicReference, UnresolvedReference};
 
 use crate::vm::class::constant_pool::UnresolvedReference::{ClassReference, FieldReference, MethodReference};
 use crate::vm::class::field::{FieldType};
+use crate::vm::class::method::MethodRepr::Native;
+use crate::vm::class::method::{NativeFnPtr, NativeMethod};
+use crate::vm::class_loader::native::{init_native_store, NATIVE_FN_STORE, NativeMethodRef};
 
 type Exception = String;
 
@@ -92,10 +97,7 @@ fn resolve_method(class: ClassRef, method: &UnresolvedReference, superclass: boo
     match method {
         MethodReference(_, name, descriptor) => {
             // signature-polymorph methods first
-            if let Some((i, _)) = class.data.methods.iter()
-                .enumerate().find(|(_i, m)| {
-                &m.name == name && &m.descriptor == descriptor
-            }) {
+            if let Some((_, i)) = class.find_method(name, descriptor) {
                 return Ok(SymbolicReference::MethodReference(class, i));
             }
 
