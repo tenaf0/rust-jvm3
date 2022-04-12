@@ -491,7 +491,7 @@ impl VMThread {
                     CPEntry::ResolvedSymbolicReference(
                         SymbolicReference::ClassReference(other_class)) => {
                         // TODO: It should not be an abstract class
-                        let object = VM_HANDLER.get().unwrap().object_arena.new(other_class);
+                        let object = VM_HANDLER.get().unwrap().object_arena.new_object(other_class);
                         frame.push(object.ptr as u64);
                     }
                     _ => panic!("Unexpected pattern: {:?}", entry)

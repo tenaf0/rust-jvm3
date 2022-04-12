@@ -1,4 +1,5 @@
 package java.lang;
 public final class String {
-	private long index;
+	public long length;
+	public long index;
 }

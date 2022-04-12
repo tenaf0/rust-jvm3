@@ -10,7 +10,7 @@ use crate::vm::object::ObjectPtr;
 pub struct ObjectArena {
     last_index: AtomicUsize,
     arena: *mut AtomicU64,
-    cap: AtomicUsize
+    cap: usize
 }
 
 unsafe impl Sync for ObjectArena {}
@@ -33,7 +33,22 @@ impl ObjectArena {
         }
     }
 
-    pub fn new(&self, class: ClassRef) -> ObjectPtr {
+    pub fn new() -> Self {
+        let layout = Layout::array::<AtomicU64>(10*1024*1024).unwrap();
+        let ptr = unsafe { alloc::alloc(layout) } as *mut AtomicU64;
+
+        if ptr.is_null() {
+            alloc::handle_alloc_error(layout);
+        }
+
+        ObjectArena {
+            last_index: AtomicUsize::new(0),
+            arena: ptr,
+            cap: Default::default()
+        }
+    }
+
+    pub fn new_object(&self, class: ClassRef) -> ObjectPtr {
         self.allocate_object(class, class.data.instance_field_count)
     }
 
@@ -65,17 +80,6 @@ impl ObjectArena {
 
 impl Default for ObjectArena {
     fn default() -> Self {
-        let layout = Layout::array::<AtomicU64>(10*1024*1024).unwrap();
-        let ptr = unsafe { alloc::alloc(layout) } as *mut AtomicU64;
-
-        if ptr.is_null() {
-            alloc::handle_alloc_error(layout);
-        }
-
-        ObjectArena {
-            last_index: AtomicUsize::new(0),
-            arena: ptr,
-            cap: Default::default()
-        }
+        Self::new()
     }
 }

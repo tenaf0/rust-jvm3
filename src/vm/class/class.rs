@@ -85,7 +85,7 @@ pub struct ClassRepr {
 }
 
 /// Concrete type used as "pointer" to a Class instance
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 #[repr(transparent)]
 pub struct ClassRef(*const Class);
 

@@ -30,7 +30,15 @@ pub fn init_native_store() -> HashMap<NativeMethodRef, NativeFnPtr> {
         descriptor: MethodDescriptor {
             parameters: vec![FieldType::I],
             ret: FieldType::V
-        }}, io::println);
+        }}, io::println_int);
+
+    native_store.insert(NativeMethodRef {
+        class_name: "java/io/PrintStream".to_string(),
+        method_name: "println".to_string(),
+        descriptor: MethodDescriptor {
+            parameters: vec![FieldType::L("java/lang/String".to_string())],
+            ret: FieldType::V
+        }}, io::println_string);
 
     native_store
 }
@@ -47,7 +55,7 @@ mod System {
         let vm = VM_HANDLER.get().unwrap();
         let print_stream = vm.load_class("java/io/PrintStream").unwrap();
 
-        let ptr = vm.object_arena.new(print_stream);
+        let ptr = vm.object_arena.new_object(print_stream);
 
         class.data.static_fields[0].store(ptr.ptr as u64, Ordering::Relaxed);
 
@@ -57,12 +65,25 @@ mod System {
 
 mod io {
     use smallvec::SmallVec;
-    use crate::ClassRef;
+    use crate::{ClassRef, VM_HANDLER};
     use crate::vm::class::method::MAX_NO_OF_ARGS;
+    use crate::vm::object::ObjectPtr;
+    use crate::vm::pool::string::StrArena;
 
-    pub fn println(class: ClassRef, args: SmallVec<[u64; MAX_NO_OF_ARGS]>,
+    pub fn println_int(class: ClassRef, args: SmallVec<[u64; MAX_NO_OF_ARGS]>,
                    exception: &mut Option<String>) -> Option<u64> {
         println!("{}", args[1] as i32);
+        None
+    }
+
+    pub fn println_string(class: ClassRef, args: SmallVec<[u64; MAX_NO_OF_ARGS]>,
+                          exception: &mut Option<String>) -> Option<u64> {
+
+        let str = args[1];
+        let str = ObjectPtr::from_val(str).unwrap();
+
+        println!("{}", StrArena::get_string(str));
+
         None
     }
 }

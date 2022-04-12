@@ -1,94 +1,150 @@
+use std::alloc;
+use std::alloc::Layout;
 use std::collections::HashMap;
+use std::mem::MaybeUninit;
+use std::pin::Pin;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use std::sync::RwLock;
 use crate::{ObjectHeader, VM_HANDLER};
 use crate::vm::object::ObjectPtr;
 
 const STRING_FIELD_COUNT: usize = 1;
-
-#[derive(Debug)]
-#[repr(C)]
-pub struct StringObject {
-    // This object can be referenced both as a Java object as well as a struct
-    pub header: ObjectHeader,
-    pub data: [u64; STRING_FIELD_COUNT],
-    pub string: String
-}
+const STRING_POOL_BUFFER_SIZE: usize = 10;
 
 #[derive(Debug)]
 pub struct StringPool {
-    pool: RwLock<Vec<StringObject>>,
-    interned_string: RwLock<HashMap<String, usize>>
+    buffers: RwLock<Vec<StrArena>>,
+    interned_string: RwLock<HashMap<String, ObjectPtr>>
 }
 
 impl StringPool {
     pub fn add_string(&self, value: &str) -> ObjectPtr {
-        let index = self.add_string_to_pool(value);
-        let mut pool = self.pool.write().unwrap();
-        let ptr: *mut StringObject = pool.get_mut(index).unwrap();
+        let mut buffers = self.buffers.write().unwrap();
+        let buffer = buffers.last_mut().unwrap();
+        let option = buffer.add_string(value);
 
-        ObjectPtr { ptr: ptr.cast() }
-    }
+        match option {
+            None => {
+                buffers.push(StrArena::new());
+                drop(buffers);
 
-    fn add_string_to_pool(&self, value: &str) -> usize {
-        let mut pool = self.pool.write().unwrap();
-        let string_object = StringObject {
-            header: ObjectHeader::new(VM_HANDLER.get().unwrap().string_class.ptr()),
-            data: [pool.len() as u64],
-            string: value.to_string()
-        };
-
-        pool.push(string_object);
-
-        pool.len()-1
+                println!("Creating new StrArena");
+                self.add_string(value)
+            }
+            Some(res) => {
+                res
+            }
+        }
     }
 
     pub fn intern_string(&self, value: &str) -> ObjectPtr {
         {
             let interned_map = self.interned_string.read().unwrap();
             if let Some(index) = interned_map.get(value) {
-                let ptr: *mut StringObject = self.pool.write().unwrap().get_mut(*index).unwrap();
-
-                return ObjectPtr { ptr: ptr.cast() };
+                return *index;
             }
         }
 
+        let obj = self.add_string(value);
 
-        let index = self.add_string_to_pool(value);
-        let ptr: *mut StringObject = self.pool.write().unwrap().get_mut(index).unwrap();
+        println!("Interned string {}", value);
 
         let mut interned_map = self.interned_string.write().unwrap();
-        interned_map.insert(value.to_string(), index);
+        interned_map.insert(value.to_string(), obj);
 
-        ObjectPtr { ptr: ptr.cast() }
-    }
-
-    pub fn get(&self, index: usize) -> String {
-        let pool = self.pool.read().unwrap();
-
-        pool[index].string.clone()
+        obj
     }
 }
 
 impl Default for StringPool {
     fn default() -> Self {
         StringPool {
-            pool: Default::default(),
+            buffers: RwLock::new(vec![StrArena::new()]),
             interned_string: Default::default()
         }
+    }
+}
+
+#[derive(Debug)]
+pub struct StrArena {
+    last_index: AtomicUsize,
+    arena: *mut u8,
+    cap: usize,
+}
+
+unsafe impl Send for StrArena {}
+unsafe impl Sync for StrArena {}
+
+impl StrArena {
+    pub fn new() -> StrArena {
+        const SIZE: usize = 1024;
+
+        let layout = Layout::array::<u8>(SIZE).unwrap();
+        let ptr = unsafe { alloc::alloc(layout) };
+
+        if ptr.is_null() {
+            alloc::handle_alloc_error(layout);
+        }
+
+        StrArena {
+            last_index: AtomicUsize::new(0),
+            arena: ptr,
+            cap: SIZE
+        }
+    }
+
+    pub fn add_string(&self, str: &str) -> Option<ObjectPtr> {
+        let str = str.as_bytes();
+        let len = str.len();
+        assert!(len < self.cap);
+
+        let offset = self.last_index.fetch_add(len, Ordering::AcqRel);
+
+        if offset + len >= self.cap {
+            self.last_index.fetch_sub(len, Ordering::AcqRel);
+            return None;
+        }
+
+        let ptr = unsafe { self.arena.offset(offset as isize) };
+
+        unsafe { std::ptr::copy_nonoverlapping(str.as_ptr(), ptr, len) };
+
+        let vm = VM_HANDLER.get().unwrap();
+        let string = vm.object_arena.new_object(vm.string_class);
+        string.put_field(0, len as u64);
+        string.put_field(1, ptr as u64);
+
+        Some(string)
+    }
+
+    pub fn get_string(obj: ObjectPtr) -> String {
+        let vm = VM_HANDLER.get().unwrap();
+        assert_eq!(obj.get_class(), vm.string_class);
+
+        let length = obj.get_field(0) as usize;
+        let ptr = obj.get_field(1) as *mut u8;
+
+        if length == 0 {
+            return String::new();
+        }
+
+        let str = unsafe { std::slice::from_raw_parts(ptr, length) };
+        let str = Vec::from(str);
+        String::from_utf8(str).unwrap()
     }
 }
 
 mod tests {
     use std::sync::atomic::Ordering;
     use crate::{VM, VM_HANDLER};
-    use crate::vm::pool::string::StringPool;
+    use crate::vm::pool::string::{STRING_POOL_BUFFER_SIZE, StringPool};
 
-    #[test]
+    /*#[test]
     fn add_string() {
         let _vm = VM_HANDLER.get_or_init(VM::init);
 
-        let pool = StringPool { pool: Default::default(), interned_string: Default::default() };
+        let pool = StringPool { buffers: Default::default(), interned_string: Default::default() };
 
         let ptr1 = pool.intern_string("string1");
         assert_eq!(pool.pool.read().unwrap().len(), 1);
@@ -105,5 +161,5 @@ mod tests {
 
         let index = ptr3.get_field(0);
         assert_eq!(&*pool.get(index as usize), "string1");
-    }
+    }*/
 }

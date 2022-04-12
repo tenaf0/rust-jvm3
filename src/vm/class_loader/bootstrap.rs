@@ -23,6 +23,7 @@ use crate::vm::class::method::MethodRepr::Native;
 use crate::vm::class_loader::array::create_primitive_array_class;
 use crate::vm::class_loader::native::{init_native_store, NATIVE_FN_STORE, NativeMethodRef};
 use crate::vm::object::ObjectPtr;
+use crate::vm::pool::string::StrArena;
 
 use crate::vm::thread::thread::ThreadStatus;
 use crate::vm::thread::thread::ThreadStatus::FINISHED;
@@ -107,12 +108,10 @@ impl VM {
                             // String object which denotes the name of the class that should be loaded
 
                             let string = args[1] as *const AtomicU64;
-                            let string = ObjectPtr { ptr: string };
-                            let index = string.get_field(0);
+                            let obj = ObjectPtr { ptr: string };
 
                             let vm = VM_HANDLER.get().unwrap();
-                            let string = &vm.string_pool.get(index as usize);
-                            let res = vm.load_class(string);
+                            let res = vm.load_class(StrArena::get_string(obj).as_str());
 
                             match res {
                                 Ok(val) => Some(val.ptr() as u64),
@@ -150,13 +149,18 @@ impl VM {
                 fields: vec![
                     Field {
                         flag: 0,
+                        name: "length".to_string(),
+                        descriptor: FieldType::J
+                    },
+                    Field {
+                        flag: 0,
                         name: "index".to_string(),
                         descriptor: FieldType::J
                     }
                 ],
                 methods: vec![],
                 static_fields: Default::default(),
-                instance_field_count: 1
+                instance_field_count: 2
             }
         };
 

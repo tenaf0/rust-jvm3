@@ -132,7 +132,7 @@ mod tests {
     fn object_test() {
         let vm = VM_HANDLER.get_or_init(VM::init);
 
-        let obj = vm.object_arena.new(vm.string_class);
+        let obj = vm.object_arena.new_object(vm.string_class);
         assert_eq!(obj.get_field(0), 0);
 
         obj.put_field(0, 3);
