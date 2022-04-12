@@ -1,3 +1,4 @@
+use std::env;
 use once_cell::sync::OnceCell;
 use smallvec::{smallvec};
 
@@ -17,12 +18,16 @@ static VM_HANDLER: OnceCell<VM> = OnceCell::new();
 fn main() {
     let vm = VM_HANDLER.get_or_init(VM::init);
 
+    let args: Vec<String> = env::args().collect();
+    if args.len() < 2 {
+        println!("Please specify a class file to load");
+        return;
+    }
+
     let mut thread = VMThread::new();
     let handle = std::thread::spawn(move || {
         let c = vm.classloader;
-        println!("{:?}", c);
-
-        let ptr = vm.string_pool.intern_string("hu.garaba.Virtual");
+        let ptr = vm.string_pool.intern_string(args[1].clone().as_str());
 
         thread.start((c, 0), smallvec![0, ptr.ptr as u64]);
         if let ThreadStatus::FINISHED(Some(class)) = thread.status {
@@ -43,6 +48,8 @@ fn main() {
             if let Some((i, _method)) = main_method {
                 thread.start((ClassRef::new(ptr), i), smallvec![0]);
                 println!("{:?}", thread.status);
+            } else {
+                println!("Class {} doesn't have a main method", class.data.name);
             }
         } else {
             println!("{:?}", thread.status);
@@ -50,4 +57,6 @@ fn main() {
     });
 
     handle.join();
+
+    vm.stop();
 }

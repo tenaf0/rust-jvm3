@@ -14,8 +14,8 @@ const STRING_POOL_BUFFER_SIZE: usize = 10;
 
 #[derive(Debug)]
 pub struct StringPool {
-    buffers: RwLock<Vec<StrArena>>,
-    interned_string: RwLock<HashMap<String, ObjectPtr>>
+    pub buffers: RwLock<Vec<StrArena>>,
+    pub interned_string: RwLock<HashMap<String, ObjectPtr>>
 }
 
 impl StringPool {

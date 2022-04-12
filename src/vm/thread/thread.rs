@@ -71,7 +71,9 @@ impl VMThread {
         let class = &*class;
         let method = &class.data.methods[method];
 
-        println!("{}:{} {:?}", class.data.name, method.name, method.descriptor);
+        if PRINT_TRACE {
+            println!("{}:{} {:?}", class.data.name, method.name, method.descriptor);
+        }
 
         match &method.repr {
             MethodRepr::Jvm(jvm_method) => {

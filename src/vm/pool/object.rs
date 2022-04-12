@@ -8,7 +8,7 @@ use crate::vm::object::ObjectPtr;
 
 #[derive(Debug)]
 pub struct ObjectArena {
-    last_index: AtomicUsize,
+    pub last_index: AtomicUsize,
     arena: *mut AtomicU64,
     cap: usize
 }
@@ -61,8 +61,6 @@ impl ObjectArena {
     fn allocate_object(&self, class: ClassRef, size: usize) -> ObjectPtr {
         let size = Self::calc_align(size);
         let offset = self.last_index.fetch_add(size, Ordering::AcqRel);
-
-        println!("Allocating object of size {}", size);
 
         let ptr = unsafe { self.arena.offset(offset as isize ) };
         let mut header: *mut ObjectHeader = ptr.cast();

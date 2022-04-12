@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::pin::Pin;
 use std::ptr::null;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
 use crate::{Class};
 use crate::vm::class::class::ClassRef;
@@ -43,5 +44,15 @@ impl VM {
         vm.string_class = ClassRef::new(&*vm.classes.lock().unwrap()[2]);
 
         vm
+    }
+
+    pub fn stop(&self) {
+        println!("\n\n\nVM stats: ");
+        println!("Loaded {} classes", self.bootstrap_cl_class_list.lock().unwrap().len());
+        println!("Object arena allocated {} bytes of object",
+                 self.object_arena.last_index.load(Ordering::Relaxed));
+        println!("String pool has {} block(s) of data and has {} strings interned",
+                 self.string_pool.buffers.read().unwrap().len(),
+                 self.string_pool.interned_string.read().unwrap().len());
     }
 }
