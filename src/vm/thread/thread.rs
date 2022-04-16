@@ -6,7 +6,7 @@ use smallvec::{SmallVec};
 use crate::{Class, Method, VM_HANDLER};
 use crate::class_parser::constants::{AccessFlagClass, AccessFlagMethod};
 use crate::class_parser::constants::AccessFlagField::ACC_PRIVATE;
-use crate::helper::has_flag;
+use crate::helper::{ftou, has_flag, utof};
 use crate::vm::class::class::ClassRef;
 use crate::vm::class::constant_pool::{CPEntry, SymbolicReference};
 use crate::vm::class::constant_pool::SymbolicReference::{FieldReference, MethodReference};
@@ -17,6 +17,7 @@ use crate::vm::instructions::{Instruction, instruction_length, InstructionResult
 use crate::vm::object::ObjectPtr;
 use crate::vm::thread::frame::Frame;
 use crate::vm::thread::thread::ThreadStatus::{FAILED, FINISHED, RUNNING};
+use num_enum::FromPrimitive;
 
 pub type MethodRef = (ClassRef, usize);
 
@@ -155,12 +156,13 @@ impl VMThread {
 
         let frame = self.stack.last_mut().unwrap();
         let instr = code.code[frame.pc];
-        let instruction = Instruction::try_from(instr).unwrap();
+        let instruction = Instruction::from_primitive(instr);
 
         if PRINT_TRACE {
             println!("{}: {:?}", frame.pc, instruction);
         }
         match instruction {
+            nop => {},
             aconst_null => frame.push(0),
             iconst_m1 | iconst_0 | iconst_1 | iconst_2 | iconst_3 | iconst_4
             | iconst_5 => {
@@ -170,6 +172,14 @@ impl VMThread {
             lconst_0 | lconst_1 => {
                 let val = instr as u64 - 9;
                 frame.push(val);
+            }
+            dconst_0 => {
+                const VAL: f64 = 0.0;
+                frame.push(ftou(VAL));
+            }
+            dconst_1 => {
+                const VAL: f64 = 1.0;
+                frame.push(ftou(VAL));
             }
             bipush => {
                 let val = code.code[frame.pc + 1];
@@ -203,10 +213,22 @@ impl VMThread {
                     _ => panic!("")
                 }
             }
+            aaload => {
+                let index = frame.pop() as usize;
+                let array = frame.pop();
+                let array = ObjectPtr::from_val(array).unwrap();
+
+                frame.push(array.get_from_array(index));
+            }
             istore => {
                 let val = frame.pop() as u32;
                 let index = code.code[frame.pc + 1];
                 frame.set_s(index as usize, val);
+            }
+            dstore => {
+                let val = frame.pop();
+                let index = code.code[frame.pc + 1];
+                frame.set_d(index as usize, val);
             }
             astore => {
                 let val = frame.pop();
@@ -222,6 +244,11 @@ impl VMThread {
                 let val = frame.get_s(index as usize);
                 frame.push(val as u64);
             }
+            dload => {
+                let index = code.code[frame.pc + 1];
+                let val = frame.get_d(index as usize);
+                frame.push(val);
+            }
             aload => {
                 let index = code.code[frame.pc + 1];
                 let val = frame.get_d(index as usize);
@@ -233,6 +260,10 @@ impl VMThread {
             }
             lload_0 | lload_1 | lload_2 => {
                 let val = frame.get_d(instr as usize - 30);
+                frame.push(val);
+            }
+            dload_0 | dload_1 | dload_2 | dload_3 => {
+                let val = frame.get_d(instr as usize - 38);
                 frame.push(val);
             }
             aload_0 | aload_1 | aload_2 | aload_3 => {
@@ -247,19 +278,39 @@ impl VMThread {
 
                 frame.push(obj.get_from_array(index as usize));
             }
-            lstore_0 | lstore_1 | lstore_2 => todo!(),
+            lstore_0 | lstore_1 | lstore_2  => {
+                let val = frame.pop();
+
+                frame.set_d(instr as usize - 63, val);
+            }
+            dstore_0 | dstore_1 | dstore_2 | dstore_3 => {
+                let val = frame.pop();
+
+                frame.set_d(instr as usize - 71, val);
+            }
             astore_0 | astore_1 | astore_2 | astore_3 => {
                 let objectref = frame.pop();
 
                 frame.set_d(instr as usize - 75, objectref);
             }
             iastore => {
+                let val = frame.pop() as u32;
+                let index = frame.pop();
+                let obj = frame.pop();
+                let obj = ObjectPtr::from_val(obj).unwrap();
+
+                obj.store_to_array(index as usize, val as u64);
+            }
+            aastore => {
                 let val = frame.pop();
                 let index = frame.pop();
                 let obj = frame.pop();
                 let obj = ObjectPtr::from_val(obj).unwrap();
 
                 obj.store_to_array(index as usize, val);
+            }
+            pop => {
+                let _ = frame.pop();
             }
             dup => {
                 let val = frame.safe_peek().unwrap();
@@ -279,6 +330,13 @@ impl VMThread {
                 let (res, _) = a.overflowing_add(b);
                 frame.push(res as u64);
             }
+            dadd => {
+                let b = utof(frame.pop());
+                let a = utof(frame.pop());
+
+                let res = a + b;
+                frame.push(ftou(res));
+            }
             isub => {
                 let b = frame.pop() as u32;
                 let a = frame.pop() as u32;
@@ -286,12 +344,37 @@ impl VMThread {
                 let (res, _) = a.overflowing_sub(b);
                 frame.push(res as u64);
             }
+            dsub => {
+                let b = utof(frame.pop());
+                let a = utof(frame.pop());
+
+                let res = a - b;
+                frame.push(ftou(res));
+            }
             imul => {
                 let b = frame.pop() as u32;
                 let a = frame.pop() as u32;
 
                 let (res, _) = a.overflowing_mul(b);
                 frame.push(res as u64);
+            }
+            dmul => {
+                let b = utof(frame.pop());
+                let a = utof(frame.pop());
+
+                let res = a * b;
+                frame.push(ftou(res));
+            }
+            ddiv => {
+                let b = utof(frame.pop());
+                let a = utof(frame.pop());
+
+                let res = a / b;
+                frame.push(ftou(res));
+            }
+            dneg => {
+                let a = utof(frame.pop());
+                frame.push(ftou(-a));
             }
             iinc => {
                 let index = code.code[frame.pc + 1] as usize;
@@ -348,7 +431,7 @@ impl VMThread {
                 *result = Some(frame.pop());
                 return InstructionResult::Return;
             }
-            lreturn => {
+            lreturn | dreturn | areturn => {
                 *result = Some(frame.pop());
                 return InstructionResult::Return;
             }
@@ -510,12 +593,35 @@ impl VMThread {
                 let object = vm.object_arena.new_array(array_class, length as usize);
                 frame.push(object.ptr as u64);
             }
-            anewarray => todo!(),
+            anewarray => {
+                let index = u16::from_be_bytes(code.code[frame.pc + 1..frame.pc + 3].try_into()
+                    .unwrap());
+                let length = frame.pop();
+
+                let vm = VM_HANDLER.get().unwrap();
+
+                resolve(ClassRef::new(class), index as usize);
+                let entry = class.get_cp_entry(index as usize);
+
+                match *entry {
+                    CPEntry::ResolvedSymbolicReference(
+                        SymbolicReference::ClassReference(other_class)) => {
+                        let mut array_class = other_class.data.name.clone();
+                        array_class.insert(0, '[');
+                        let array_class = vm.load_class(array_class.as_str()).unwrap();
+
+                        let object = vm.object_arena.new_array(array_class, length as usize);
+                        frame.push(object.ptr as u64);
+                    }
+                    _ => panic!("Unexpected pattern: {:?}", entry)
+                }
+            },
             arraylength => {
                 let obj = frame.pop();
                 let obj = ObjectPtr::from_val(obj).unwrap();
                 frame.push(obj.get_field(0));
             }
+            breakpoint | impdep1 | impdep2 => todo!("Instruction {} not yet implemented", instr),
         }
 
         if PRINT_TRACE {

@@ -1,8 +1,6 @@
 use std::cell::UnsafeCell;
 use std::fs::File;
-
 use std::io::Read;
-
 use std::path::PathBuf;
 use std::ptr::{null};
 use std::sync::{Mutex};
@@ -13,7 +11,7 @@ use crate::class_parser::constants::{AccessFlagMethod, CPInfo};
 use crate::class_parser::parse_class;
 use crate::class_parser::types::ParsedClass;
 use crate::class_parser::constants::CPTag;
-use crate::helper::has_flag;
+use crate::helper::{ftou, has_flag};
 use crate::vm::class::class::{ClassRef, ClassState};
 use crate::vm::class::constant_pool::{CPEntry, UnresolvedReference};
 use crate::vm::class::constant_pool::CPEntry::{ConstantString, ConstantValue, UnresolvedSymbolicReference};
@@ -204,7 +202,7 @@ impl VM {
             return self.load_array_class(name);
         }
 
-        let mut file = find_class_file(name, "./jdk/target")?;
+        let mut file = find_class_file(name, "jdk/target")?;
         let mut buf = Vec::with_capacity(INITIAL_CLASS_BUFFER_SIZE);
         file.read_to_end(&mut buf).map_err(|e| e.to_string())?;
 
@@ -270,7 +268,7 @@ impl VM {
                     buf[..4].clone_from_slice(&num1[..]);
                     buf[4..].clone_from_slice(&num2[..]);
 
-                    constant_pool.push(ConstantValue(f64::from_be_bytes(buf) as u64));
+                    constant_pool.push(ConstantValue(ftou(f64::from_be_bytes(buf))));
                 }
 
                 Class(name) => {
@@ -483,5 +481,9 @@ pub fn find_class_file(name: &str, class_path: &str) -> Result<File, Exception> 
     let buf = PathBuf::from(class_path);
     let name = name.replace('.', "/") + ".class";
 
-    File::open(buf.join(name).as_path()).map_err(|e| e.to_string())
+    File::open(buf.join(name.clone()).as_path()).map_err(|e| {
+        let mut str = e.to_string();
+        str.push_str(format!(" while loading {}", name).as_str());
+        str
+    })
 }

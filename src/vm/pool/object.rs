@@ -34,7 +34,9 @@ impl ObjectArena {
     }
 
     pub fn new() -> Self {
-        let layout = Layout::array::<AtomicU64>(10*1024*1024).unwrap();
+        const SIZE: usize = 10 * 1024 * 1024 * 1024 * 1024;
+
+        let layout = Layout::array::<AtomicU64>(SIZE).unwrap();
         let ptr = unsafe { alloc::alloc(layout) } as *mut AtomicU64;
 
         if ptr.is_null() {
@@ -44,7 +46,7 @@ impl ObjectArena {
         ObjectArena {
             last_index: AtomicUsize::new(0),
             arena: ptr,
-            cap: Default::default()
+            cap: SIZE
         }
     }
 
@@ -61,6 +63,10 @@ impl ObjectArena {
     fn allocate_object(&self, class: ClassRef, size: usize) -> ObjectPtr {
         let size = Self::calc_align(size);
         let offset = self.last_index.fetch_add(size, Ordering::AcqRel);
+
+        if offset + size >= self.cap {
+            panic!("Allocation request failed");
+        }
 
         let ptr = unsafe { self.arena.offset(offset as isize ) };
         let mut header: *mut ObjectHeader = ptr.cast();

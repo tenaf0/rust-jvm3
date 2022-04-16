@@ -10,7 +10,7 @@ use crate::vm::class::class::ClassState;
 use crate::vm::class::constant_pool::{CPEntry, SymbolicReference, UnresolvedReference};
 
 use crate::vm::class::constant_pool::UnresolvedReference::{ClassReference, FieldReference, MethodReference};
-use crate::vm::class::field::{FieldType};
+use crate::vm::class::field::{Field, FieldType};
 use crate::vm::class::method::MethodRepr::Native;
 use crate::vm::class::method::{NativeFnPtr, NativeMethod};
 use crate::vm::class_loader::native::{init_native_store, NATIVE_FN_STORE, NativeMethodRef};
@@ -70,17 +70,38 @@ pub fn resolve(class: ClassRef, index: usize) -> Result<(), Exception> {
 
             match class.get_cp_entry(*class_index as usize) {
                 ResolvedSymbolicReference(SymbolicReference::ClassReference(other_class)) => {
-                    if let Some((field_index, field)) = other_class.data.fields.iter().enumerate()
-                        .find(|(_i, f)| &f.name == name && &f.descriptor == descriptor) {
-                        class.set_cp_entry(index, ResolvedSymbolicReference(
-                            SymbolicReference::FieldReference(*other_class, !field.is_static(),
-                                                              other_class.data.superclass
-                                                                  .data.instance_field_count +
-                                                                  field_index)));
+                    let mut instance_count = 0;
+                    let mut static_count = 0;
 
-                        // TODO: Recursive lookup
+                    let mut field= None;
 
-                        initialize_class(*other_class);
+                    for f in &other_class.data.fields {
+                        if &f.name == name && &f.descriptor == descriptor {
+                            field = Some(f);
+                            break;
+                        }
+
+                        if f.is_static() {
+                            static_count += 1;
+                        } else {
+                            instance_count += 1;
+                        }
+                    }
+
+                    match field {
+                        None => panic!("Could not find field"),
+                        Some(field) => {
+                            let field_index = if field.is_static() {
+                                static_count
+                            } else {
+                                instance_count + other_class.data.superclass.data.instance_field_count
+                            };
+                            class.set_cp_entry(index, ResolvedSymbolicReference(
+                                SymbolicReference::FieldReference(*other_class, !field.is_static(), field_index)));
+
+                            initialize_class(*other_class);
+                            // TODO: Recursive lookup
+                        }
                     }
                 }
                 _ => panic!()

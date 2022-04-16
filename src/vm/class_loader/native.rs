@@ -22,7 +22,15 @@ pub fn init_native_store() -> HashMap<NativeMethodRef, NativeFnPtr> {
         descriptor: MethodDescriptor {
                                 parameters: vec![],
                                 ret: FieldType::V
-        }}, System::registerNatives);
+        }}, lang::system::registerNatives);
+
+    native_store.insert(NativeMethodRef {
+        class_name: "java/lang/Math".to_string(),
+        method_name: "sqrt".to_string(),
+        descriptor: MethodDescriptor {
+            parameters: vec![FieldType::D],
+            ret: FieldType::D
+        }}, lang::math::sqrt);
 
     native_store.insert(NativeMethodRef {
         class_name: "java/io/PrintStream".to_string(),
@@ -36,6 +44,14 @@ pub fn init_native_store() -> HashMap<NativeMethodRef, NativeFnPtr> {
         class_name: "java/io/PrintStream".to_string(),
         method_name: "println".to_string(),
         descriptor: MethodDescriptor {
+            parameters: vec![FieldType::D],
+            ret: FieldType::V
+        }}, io::println_double);
+
+    native_store.insert(NativeMethodRef {
+        class_name: "java/io/PrintStream".to_string(),
+        method_name: "println".to_string(),
+        descriptor: MethodDescriptor {
             parameters: vec![FieldType::L("java/lang/String".to_string())],
             ret: FieldType::V
         }}, io::println_string);
@@ -43,29 +59,44 @@ pub fn init_native_store() -> HashMap<NativeMethodRef, NativeFnPtr> {
     native_store
 }
 
-mod System {
-    use std::sync::atomic::Ordering;
-    use smallvec::SmallVec;
-    use crate::{ClassRef, VM_HANDLER};
-    use crate::vm::class::method::MAX_NO_OF_ARGS;
-    use crate::vm::object::ObjectPtr;
+mod lang {
+    pub mod system {
+        use std::sync::atomic::Ordering;
+        use smallvec::SmallVec;
+        use crate::{ClassRef, VM_HANDLER};
+        use crate::vm::class::method::MAX_NO_OF_ARGS;
 
-    pub fn registerNatives(class: ClassRef, args: SmallVec<[u64; MAX_NO_OF_ARGS]>,
-                           exception: &mut Option<String>) -> Option<u64> {
-        let vm = VM_HANDLER.get().unwrap();
-        let print_stream = vm.load_class("java/io/PrintStream").unwrap();
+        pub fn registerNatives(class: ClassRef, args: SmallVec<[u64; MAX_NO_OF_ARGS]>,
+                               exception: &mut Option<String>) -> Option<u64> {
+            let vm = VM_HANDLER.get().unwrap();
+            let print_stream = vm.load_class("java/io/PrintStream").unwrap();
 
-        let ptr = vm.object_arena.new_object(print_stream);
+            let ptr = vm.object_arena.new_object(print_stream);
 
-        class.data.static_fields[0].store(ptr.ptr as u64, Ordering::Relaxed);
+            class.data.static_fields[0].store(ptr.ptr as u64, Ordering::Relaxed);
 
-        None
+            None
+        }
+    }
+
+    pub mod math {
+        use smallvec::SmallVec;
+        use crate::ClassRef;
+        use crate::helper::{ftou, utof};
+        use crate::vm::class::method::MAX_NO_OF_ARGS;
+
+        pub fn sqrt(class: ClassRef, args: SmallVec<[u64; MAX_NO_OF_ARGS]>,
+                    exception: &mut Option<String>) -> Option<u64> {
+            let a = utof(args[0]);
+            Some(ftou(a.sqrt()))
+        }
     }
 }
 
 mod io {
     use smallvec::SmallVec;
     use crate::{ClassRef, VM_HANDLER};
+    use crate::helper::{ftou, utof};
     use crate::vm::class::method::MAX_NO_OF_ARGS;
     use crate::vm::object::ObjectPtr;
     use crate::vm::pool::string::StrArena;
@@ -73,6 +104,12 @@ mod io {
     pub fn println_int(class: ClassRef, args: SmallVec<[u64; MAX_NO_OF_ARGS]>,
                    exception: &mut Option<String>) -> Option<u64> {
         println!("{}", args[1] as i32);
+        None
+    }
+
+    pub fn println_double(class: ClassRef, args: SmallVec<[u64; MAX_NO_OF_ARGS]>,
+                       exception: &mut Option<String>) -> Option<u64> {
+        println!("{}", utof(args[1]));
         None
     }
 

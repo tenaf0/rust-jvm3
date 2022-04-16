@@ -1,15 +1,15 @@
-use num_enum::TryFromPrimitive;
-use crate::vm::thread::frame::Frame;
+use num_enum::{FromPrimitive};
 
 pub enum InstructionResult {
     Continue,
     Return
 }
 
-#[derive(TryFromPrimitive, Debug, Copy, Clone, PartialEq)]
+#[derive(FromPrimitive, Debug, Copy, Clone, PartialEq)]
 #[repr(u8)]
 #[allow(non_camel_case_types)]
 pub enum Instruction {
+    nop = 0,
     aconst_null = 1,
     iconst_m1 = 2,
     iconst_0 = 3,
@@ -20,11 +20,14 @@ pub enum Instruction {
     iconst_5 = 8,
     lconst_0 = 9,
     lconst_1 = 10,
+    dconst_0 = 14,
+    dconst_1 = 15,
     bipush = 16,
     sipush = 17,
     ldc = 18,
     ldc2_w = 20,
     iload = 21,
+    dload = 24,
     aload = 25,
     iload_0 = 26,
     iload_1 = 27,
@@ -33,12 +36,18 @@ pub enum Instruction {
     lload_0 = 30,
     lload_1 = 31,
     lload_2 = 32,
+    dload_0 = 38,
+    dload_1 = 39,
+    dload_2 = 40,
+    dload_3 = 41,
     aload_0 = 42,
     aload_1 = 43,
     aload_2 = 44,
     aload_3 = 45,
     iaload = 46,
+    aaload = 50,
     istore = 54,
+    dstore = 57,
     astore = 58,
     istore_0 = 59,
     istore_1 = 60,
@@ -47,16 +56,27 @@ pub enum Instruction {
     lstore_0 = 63,
     lstore_1 = 64,
     lstore_2 = 65,
+    dstore_0 = 71,
+    dstore_1 = 72,
+    dstore_2 = 73,
+    dstore_3 = 74,
     astore_0 = 75,
     astore_1 = 76,
     astore_2 = 77,
     astore_3 = 78,
     iastore = 79,
+    aastore = 83,
+    pop = 87,
     dup = 89,
     iadd = 96,
     ladd = 97,
+    dadd = 99,
     isub = 100,
+    dsub = 103,
     imul = 104,
+    dmul = 107,
+    ddiv = 111,
+    dneg = 119,
     iinc = 132,
     i2l = 133,
     l2i = 136,
@@ -66,6 +86,8 @@ pub enum Instruction {
     goto = 167,
     ireturn = 172,
     lreturn = 173,
+    dreturn = 175,
+    areturn = 176,
     _return = 177,
     getstatic = 178,
     putstatic = 179,
@@ -78,12 +100,18 @@ pub enum Instruction {
     newarray = 188,
     anewarray = 189,
     arraylength = 190,
+    breakpoint = 202,
+    impdep1 = 254,
+    #[default]
+    impdep2 = 255
 }
 
+#[inline]
 pub const fn instruction_length(instr: Instruction) -> usize {
     use Instruction::*;
 
     match instr {
+        nop => 1,
         aconst_null => 1,
         iconst_m1 => 1,
         iconst_0 => 1,
@@ -94,11 +122,13 @@ pub const fn instruction_length(instr: Instruction) -> usize {
         iconst_5 => 1,
         lconst_0 => 1,
         lconst_1 => 1,
+        dconst_0 | dconst_1 => 1,
         bipush => 2,
         sipush => 3,
         ldc => 2,
         ldc2_w => 3,
         iload => 2,
+        dload => 2,
         aload => 2,
         iload_0 => 1,
         iload_1 => 1,
@@ -107,9 +137,12 @@ pub const fn instruction_length(instr: Instruction) -> usize {
         lload_0 => 2,
         lload_1 => 2,
         lload_2 => 2,
+        dload_0 | dload_1 | dload_2 | dload_3 => 1,
         aload_0 | aload_1 | aload_2 | aload_3 => 1,
         iaload => 1,
+        aaload => 1,
         istore => 2,
+        dstore => 2,
         astore => 2,
         istore_0 => 1,
         istore_1 => 1,
@@ -118,13 +151,21 @@ pub const fn instruction_length(instr: Instruction) -> usize {
         lstore_0 => 1,
         lstore_1 => 1,
         lstore_2 => 1,
+        dstore_0 | dstore_1 | dstore_2 | dstore_3 => 1,
         astore_0 | astore_1 | astore_2 | astore_3 => 1,
         iastore => 1,
+        aastore => 1,
+        pop => 1,
         dup => 1,
         iadd => 1,
         ladd => 1,
+        dadd => 1,
         isub => 1,
+        dsub => 1,
         imul => 1,
+        dmul => 1,
+        ddiv => 1,
+        dneg => 1,
         iinc => 3,
         i2l => 1,
         l2i => 1,
@@ -132,6 +173,8 @@ pub const fn instruction_length(instr: Instruction) -> usize {
         goto => 3,
         ireturn => 1,
         lreturn => 1,
+        dreturn => 1,
+        areturn => 1,
         _return => 1,
         getstatic => 3,
         putstatic => 3,
@@ -144,6 +187,9 @@ pub const fn instruction_length(instr: Instruction) -> usize {
         newarray => 2,
         anewarray => 3,
         arraylength => 1,
+        breakpoint => 1,
+        impdep1 => 1,
+        impdep2 => 1
     }
 }
 
