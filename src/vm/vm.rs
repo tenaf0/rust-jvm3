@@ -1,7 +1,8 @@
 use std::collections::HashMap;
+use std::fs::File;
 use std::pin::Pin;
 use std::ptr::null;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::Mutex;
 use crate::{Class};
 use crate::vm::class::class::ClassRef;
@@ -21,7 +22,10 @@ pub struct VM {
 
     pub object_class: ClassRef,
     pub classloader: ClassRef,
-    pub string_class: ClassRef
+    pub string_class: ClassRef,
+
+    pub stat_file: Mutex<File>,
+    pub last_instruction: AtomicU8,
 }
 
 impl VM {
@@ -34,7 +38,11 @@ impl VM {
 
             object_class: ClassRef::new(null()),
             classloader: ClassRef::new(null()),
-            string_class: ClassRef::new(null())
+            string_class: ClassRef::new(null()),
+            stat_file: Mutex::new(File::options().write(true).create(true).truncate(true)
+                .open("stat.txt")
+                .unwrap()),
+            last_instruction: AtomicU8::new(0)
         };
 
         vm.load_bootstrap_classes();

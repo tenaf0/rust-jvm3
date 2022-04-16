@@ -1,11 +1,9 @@
 use std::cmp::max;
-use std::fmt::format;
-use std::ops::{Deref, Not};
+use std::fmt::{Debug};
 use std::sync::atomic::{AtomicU64, Ordering};
 use smallvec::{SmallVec};
 use crate::{Class, Method, VM_HANDLER};
-use crate::class_parser::constants::{AccessFlagClass, AccessFlagMethod};
-use crate::class_parser::constants::AccessFlagField::ACC_PRIVATE;
+use crate::class_parser::constants::{AccessFlagMethod};
 use crate::helper::{ftou, has_flag, utof};
 use crate::vm::class::class::ClassRef;
 use crate::vm::class::constant_pool::{CPEntry, SymbolicReference};
@@ -24,6 +22,7 @@ pub type MethodRef = (ClassRef, usize);
 const STACK_SIZE: usize = 36;
 
 const PRINT_TRACE: bool = false;
+pub const ENABLE_STATS: bool = true;
 
 #[derive(Debug)]
 pub enum ThreadStatus {
@@ -161,6 +160,12 @@ impl VMThread {
         if PRINT_TRACE {
             println!("{}: {:?}", frame.pc, instruction);
         }
+
+        if ENABLE_STATS {
+            let vm = VM_HANDLER.get().unwrap();
+            vm.last_instruction.store(instr, Ordering::Release);
+        }
+
         match instruction {
             nop => {},
             aconst_null => frame.push(0),
