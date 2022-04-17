@@ -1,13 +1,15 @@
 use std::fmt::{Debug, Formatter};
 use std::mem::MaybeUninit;
 use smallvec::{SmallVec};
+use crate::ClassRef;
 use crate::vm::class::method::MAX_NO_OF_ARGS;
+use crate::vm::thread::thread::MethodRef;
 
 const MAX_FRAME_SIZE: usize = 125;
 
 pub struct Frame {
+    pub methodref: MethodRef,
     pub pc: usize,
-    pub exception: Option<String>,
     local_array_size: usize,
     stack_size: usize,
     stack_top: usize,
@@ -30,12 +32,12 @@ impl Debug for Frame {
 }
 
 impl Frame {
-    pub fn new(local_array_size: usize, stack_size: usize) -> Self {
+    pub fn new(methodref: MethodRef, local_array_size: usize, stack_size: usize) -> Self {
         assert!(local_array_size + stack_size <= MAX_FRAME_SIZE);
 
         Frame {
+            methodref,
             pc: 0,
-            exception: None,
             local_array_size,
             stack_size,
             stack_top: local_array_size,
@@ -84,6 +86,10 @@ impl Frame {
         unsafe { self.data[self.stack_top].assume_init() }
     }
 
+    pub fn clear_stack(&mut self)  {
+        self.stack_top = self.local_array_size;
+    }
+
     pub fn safe_peek(&self) -> Option<u64> {
         if self.stack_top > self.local_array_size {
             Some(unsafe { self.data[self.stack_top-1].assume_init() })
@@ -108,11 +114,13 @@ impl Frame {
 }
 
 mod test {
+    use std::ptr::null;
+    use crate::ClassRef;
     use crate::vm::thread::frame::Frame;
 
     #[test]
     fn test_peek() {
-        let mut frame = Frame::new(2, 3);
+        let mut frame = Frame::new((ClassRef::new(null()), 0),2, 3);
 
         frame.push(1);
         frame.push(2);

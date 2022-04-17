@@ -24,7 +24,7 @@ pub struct VM {
     pub classloader: ClassRef,
     pub string_class: ClassRef,
 
-    pub stat_file: Mutex<File>,
+    pub stat_file: Mutex<Option<File>>,
     pub last_instruction: AtomicU8,
 }
 
@@ -39,9 +39,7 @@ impl VM {
             object_class: ClassRef::new(null()),
             classloader: ClassRef::new(null()),
             string_class: ClassRef::new(null()),
-            stat_file: Mutex::new(File::options().write(true).create(true).truncate(true)
-                .open("stat.txt")
-                .unwrap()),
+            stat_file: Mutex::new(None),
             last_instruction: AtomicU8::new(0)
         };
 

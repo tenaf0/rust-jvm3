@@ -2,17 +2,26 @@ package hu.garaba;
 
 public class Main {
 	public static void main(String[] args) {
-		for (int i = 0; i < 20; i++) {
-			System.out.println("Running PrimeGenerator");
-			PrimeGenerator.main(args);
+		var main = new Main();
+		//try {
+			int[] arg = new int[10];
+			main.step1(arg);
+		//} catch (Exception e) {
+		//	for (var elem : e.getStackTrace()) {
+		//		System.out.println(elem.getClassName());
+		//		System.out.println(elem.getMethodName());
+		//		System.out.println("");
+		//	}
+		//}
+	}
 
-			System.out.println("Running nbody");
-			nbody.main(args);
-
-			System.out.println("Running Virtual");
-			for (int j = 0; j < 20; j++) {
-				Virtual.main(args);
-			}
+	private void step1(int[] arg) {
+		for (int i = 0; i < 24; i++) {
+			step2(arg, i);
 		}
+	}
+
+	private void step2(int[] arg, int index) {
+		System.out.println(arg[index]);
 	}
 }

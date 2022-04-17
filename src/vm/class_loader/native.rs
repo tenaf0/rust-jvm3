@@ -60,20 +60,27 @@ pub fn init_native_store() -> HashMap<NativeMethodRef, NativeFnPtr> {
 }
 
 mod lang {
+    use smallvec::SmallVec;
+    use crate::{ClassRef, initialize_class, VM_HANDLER, VMThread};
+    use crate::vm::class::method::MAX_NO_OF_ARGS;
+    use crate::vm::object::ObjectPtr;
+
     pub mod system {
         use std::sync::atomic::Ordering;
         use smallvec::SmallVec;
-        use crate::{ClassRef, VM_HANDLER};
+        use crate::{ClassRef, VM_HANDLER, VMThread};
         use crate::vm::class::method::MAX_NO_OF_ARGS;
 
-        pub fn registerNatives(class: ClassRef, args: SmallVec<[u64; MAX_NO_OF_ARGS]>,
+        pub fn registerNatives(thread: &VMThread, args: SmallVec<[u64;
+            MAX_NO_OF_ARGS]>,
                                exception: &mut Option<String>) -> Option<u64> {
             let vm = VM_HANDLER.get().unwrap();
             let print_stream = vm.load_class("java/io/PrintStream").unwrap();
 
             let ptr = vm.object_arena.new_object(print_stream);
 
-            class.data.static_fields[0].store(ptr.ptr as u64, Ordering::Relaxed);
+            thread.stack.last().unwrap().methodref.0.data.static_fields[0].store(ptr.ptr as u64,
+                                                                      Ordering::Relaxed);
 
             None
         }
@@ -81,45 +88,55 @@ mod lang {
 
     pub mod math {
         use smallvec::SmallVec;
-        use crate::ClassRef;
-        use crate::helper::{ftou, utof};
+        use crate::{ClassRef, VMThread};
+        use crate::helper::{ftou2, utof2};
         use crate::vm::class::method::MAX_NO_OF_ARGS;
 
-        pub fn sqrt(class: ClassRef, args: SmallVec<[u64; MAX_NO_OF_ARGS]>,
+        pub fn sqrt(thread: &VMThread, args: SmallVec<[u64; MAX_NO_OF_ARGS]>,
                     exception: &mut Option<String>) -> Option<u64> {
-            let a = utof(args[0]);
-            Some(ftou(a.sqrt()))
+            let a = utof2(args[0]);
+            Some(ftou2(a.sqrt()))
         }
     }
 }
 
 mod io {
     use smallvec::SmallVec;
-    use crate::{ClassRef, VM_HANDLER};
-    use crate::helper::{ftou, utof};
+    use crate::{ClassRef, VM_HANDLER, VMThread};
+    use crate::helper::{ftou2, utof2};
     use crate::vm::class::method::MAX_NO_OF_ARGS;
     use crate::vm::object::ObjectPtr;
     use crate::vm::pool::string::StrArena;
 
-    pub fn println_int(class: ClassRef, args: SmallVec<[u64; MAX_NO_OF_ARGS]>,
+    pub fn println_int(thread: &VMThread, args: SmallVec<[u64; MAX_NO_OF_ARGS]>,
                    exception: &mut Option<String>) -> Option<u64> {
         println!("{}", args[1] as i32);
         None
     }
 
-    pub fn println_double(class: ClassRef, args: SmallVec<[u64; MAX_NO_OF_ARGS]>,
+    pub fn println_double(thread: &VMThread, args: SmallVec<[u64; MAX_NO_OF_ARGS]>,
                        exception: &mut Option<String>) -> Option<u64> {
-        println!("{}", utof(args[1]));
+        use std::io::Write;
+
+        let mut buf: Vec<u8> = Vec::with_capacity(20);
+        write!(&mut buf, "{}", utof2(args[1]));
+        let str = std::str::from_utf8(&buf).unwrap();
+        if let None = str.find(".") {
+            println!("{}.0", str);
+        } else {
+            println!("{}", str);
+        }
         None
     }
 
-    pub fn println_string(class: ClassRef, args: SmallVec<[u64; MAX_NO_OF_ARGS]>,
+    pub fn println_string(thread: &VMThread, args: SmallVec<[u64; MAX_NO_OF_ARGS]>,
                           exception: &mut Option<String>) -> Option<u64> {
 
         let str = args[1];
-        let str = ObjectPtr::from_val(str).unwrap();
-
-        println!("{}", StrArena::get_string(str));
+        match ObjectPtr::from_val(str) {
+            None => println!("null"),
+            Some(str) => println!("{}", StrArena::get_string(str))
+        }
 
         None
     }

@@ -1,21 +1,22 @@
 use std::cmp::max;
 use std::fmt::{Debug};
 use std::sync::atomic::{AtomicU64, Ordering};
-use smallvec::{SmallVec};
+use smallvec::{SmallVec, smallvec};
 use crate::{Class, Method, VM_HANDLER};
 use crate::class_parser::constants::{AccessFlagMethod};
-use crate::helper::{ftou, has_flag, utof};
+use crate::helper::{ftou2, has_flag, utof, utof2};
 use crate::vm::class::class::ClassRef;
 use crate::vm::class::constant_pool::{CPEntry, SymbolicReference};
 use crate::vm::class::constant_pool::SymbolicReference::{FieldReference, MethodReference};
 use crate::vm::class::field::FieldType;
-use crate::vm::class::method::{Code, MAX_NO_OF_ARGS, MethodRepr};
+use crate::vm::class::method::{Code, MAX_NO_OF_ARGS, MethodDescriptor, MethodRepr};
 use crate::vm::class_loader::resolve::resolve;
 use crate::vm::instructions::{Instruction, instruction_length, InstructionResult};
 use crate::vm::object::ObjectPtr;
 use crate::vm::thread::frame::Frame;
 use crate::vm::thread::thread::ThreadStatus::{FAILED, FINISHED, RUNNING};
 use num_enum::FromPrimitive;
+use crate::vm::pool::string::StrArena;
 
 pub type MethodRef = (ClassRef, usize);
 
@@ -33,7 +34,7 @@ pub enum ThreadStatus {
 
 pub struct VMThread {
     pub status: ThreadStatus,
-    stack: SmallVec<[Frame; STACK_SIZE]>
+    pub stack: SmallVec<[Frame; STACK_SIZE]>
 }
 
 impl VMThread {
@@ -46,7 +47,7 @@ impl VMThread {
 
     pub fn start(&mut self, method_ref: MethodRef, args: SmallVec<[u64; MAX_NO_OF_ARGS]>) {
         let arg_no = args.len();
-        let mut frame = Frame::new(0, max(arg_no, 1));
+        let mut frame = Frame::new(method_ref, 0, max(arg_no, 1));
         for arg in args {
             frame.push(arg);
         }
@@ -54,20 +55,43 @@ impl VMThread {
         self.stack.push(frame);
 
         self.status = RUNNING;
-        self.method(method_ref, arg_no);
+        let result = self.method(method_ref, arg_no);
 
         let frame = self.stack.last().unwrap();
 
-        if frame.exception.is_none() {
-            self.status = FINISHED(frame.safe_peek());
-        } else {
-            let string = frame.exception.as_ref().unwrap();
-            self.status = FAILED(string.clone());
+        match result {
+            Ok(()) => {
+                let class = method_ref.0;
+                let method = &class.data.methods[method_ref.1];
+                let res = if method.descriptor.ret == FieldType::V {
+                    None
+                } else {
+                    frame.safe_peek()
+                };
+                self.status = FINISHED(res);
+            }
+            Err(obj) => {
+                let string = obj.get_class().data.name.clone();
+
+                let array = ObjectPtr::from_val(obj.get_field(0)).unwrap();
+                let length = array.get_field(0);
+                for i in 0..length {
+                    let stack_elem = ObjectPtr::from_val(array.get_from_array(i as usize).unwrap())
+                        .unwrap();
+                    let declaring_class = stack_elem.get_field(0);
+                    let method_name = stack_elem.get_field(1);
+                    eprintln!(" at {}:{}", StrArena::get_string(ObjectPtr::from_val(declaring_class)
+                        .unwrap()), StrArena::get_string(ObjectPtr::from_val(method_name)
+                        .unwrap()));
+                }
+
+                self.status = FAILED(string);
+            }
         }
     }
 
-    fn method(&mut self, method_ref: MethodRef, arg_no: usize) {
-        let (class, method) = method_ref;
+    fn method(&mut self, method_ref: MethodRef, arg_no: usize) -> Result<(), ObjectPtr> {
+        let (class, method) = method_ref.clone();
         let class = &*class;
         let method = &class.data.methods[method];
 
@@ -78,7 +102,7 @@ impl VMThread {
         match &method.repr {
             MethodRepr::Jvm(jvm_method) => {
                 if let Some(code) = &jvm_method.code {
-                    let mut frame = Frame::new(code.max_locals, code.max_stack);
+                    let mut frame = Frame::new(method_ref, code.max_locals, code.max_stack);
 
                     let args = self.stack.last_mut().unwrap().pop_args(arg_no);
                     let mut index = 0;
@@ -89,13 +113,12 @@ impl VMThread {
                         i += 1;
                     }
                     for p in method.descriptor.parameters.iter() {
+                        frame.set_d(index, args[i]);
                         match p {
                             FieldType::D | FieldType::J => {
-                                frame.set_d(index, args[i]);
                                 index += 2;
                             }
                             _ => {
-                                frame.set_s(index, args[i] as u32);
                                 index += 1;
                             }
                         }
@@ -110,11 +133,30 @@ impl VMThread {
                             let res = self.interpreter_loop(&class, code, &mut result);
                             match res {
                                 InstructionResult::Continue => {}
-                                InstructionResult::Return => break 'outer
+                                InstructionResult::Return => { break 'outer; }
+                                InstructionResult::Exception => { break; }
                             }
                         }
 
-                        // TODO: Exception handling
+                        if let Some(obj) = result {
+                            // TODO: Exception handling
+                            let mut frame = self.stack.last_mut().unwrap();
+                            for h in &code.exception_handlers {
+                                if h.start_pc <= frame.pc && frame.pc < h.end_pc {
+                                    frame.pc = h.handler_pc;
+
+                                    frame.clear_stack();
+                                    frame.push(obj);
+                                    continue 'outer;
+                                }
+                            }
+
+                            let obj = ObjectPtr::from_val(obj).unwrap();
+
+                            // Exception bubbles up
+                            self.stack.pop();
+                            return Err(obj);
+                        }
                     }
 
                     match result {
@@ -129,21 +171,29 @@ impl VMThread {
                 } else {
                     panic!("Executing method without code!");
                 }
+
+                Ok(())
             }
             MethodRepr::Native(native_method) => {
                 let fn_ptr = native_method.fn_ptr;
                 let prev_frame = self.stack.last_mut().unwrap();
                 let args = prev_frame.pop_args(arg_no);
-                let exception = &mut prev_frame.exception;
-                let res = fn_ptr(ClassRef::new(class), args, exception);
+                let mut exception: Option<String> = None;
+                let frame = Frame::new(method_ref, 0, 0);
+                self.stack.push(frame);
+                let res = fn_ptr(self, args, &mut exception);
+                self.stack.pop();
 
-                match (res, exception) {
+                let prev_frame = self.stack.last_mut().unwrap();
+                match (res, &exception) {
                     (_, Some(e)) => panic!("Exception occured: {:?}", e),
                     (Some(res), _)  => prev_frame.push(res),
                     (None, _) if method.descriptor.ret != FieldType::V =>
                         panic!("Method {:?} should return a value!", method),
                     _ => {}
                 }
+
+                Ok(())
             }
         }
     }
@@ -178,13 +228,25 @@ impl VMThread {
                 let val = instr as u64 - 9;
                 frame.push(val);
             }
+            fconst_0 => {
+                const VAL: f64 = 0.0f32 as f64;
+                frame.push(ftou2(VAL));
+            }
+            fconst_1 => {
+                const VAL: f64 = 1.0f32 as f64;
+                frame.push(ftou2(VAL));
+            }
+            fconst_2 => {
+                const VAL: f64 = 2.0f32 as f64;
+                frame.push(ftou2(VAL));
+            }
             dconst_0 => {
                 const VAL: f64 = 0.0;
-                frame.push(ftou(VAL));
+                frame.push(ftou2(VAL));
             }
             dconst_1 => {
                 const VAL: f64 = 1.0;
-                frame.push(ftou(VAL));
+                frame.push(ftou2(VAL));
             }
             bipush => {
                 let val = code.code[frame.pc + 1];
@@ -221,9 +283,32 @@ impl VMThread {
             aaload => {
                 let index = frame.pop() as usize;
                 let array = frame.pop();
-                let array = ObjectPtr::from_val(array).unwrap();
 
-                frame.push(array.get_from_array(index));
+                let vm = VM_HANDLER.get().unwrap();
+                match ObjectPtr::from_val(array) {
+                    None => {
+                        let class = vm.load_class("java/lang/NullPointerException").unwrap();
+                        let npe = vm.object_arena.new_object(class);
+
+                        *result = Some(npe.to_val());
+                        return InstructionResult::Exception;
+                    }
+                    Some(array) => {
+                        match array.get_from_array(index) {
+                            None => {
+                                let class = vm.load_class("java/lang/ArrayIndexOutOfBoundsException").unwrap();
+                                let exc = vm.object_arena.new_object(class);
+
+                                *result = Some(exc.to_val());
+                                return InstructionResult::Exception;
+                            }
+                            Some(val) => {
+                                frame.push(val);
+                            }
+                        }
+
+                    }
+                }
             }
             istore => {
                 let val = frame.pop() as u32;
@@ -249,6 +334,11 @@ impl VMThread {
                 let val = frame.get_s(index as usize);
                 frame.push(val as u64);
             }
+            fload => {
+                let index = code.code[frame.pc + 1];
+                let val = frame.get_d(index as usize);
+                frame.push(val);
+            }
             dload => {
                 let index = code.code[frame.pc + 1];
                 let val = frame.get_d(index as usize);
@@ -263,7 +353,7 @@ impl VMThread {
                 let val = frame.get_s(instr as usize - 26);
                 frame.push(val as u64);
             }
-            lload_0 | lload_1 | lload_2 => {
+            lload_0 | lload_1 | lload_2 | lload_3 => {
                 let val = frame.get_d(instr as usize - 30);
                 frame.push(val);
             }
@@ -277,11 +367,32 @@ impl VMThread {
                 frame.push(objectref);
             }
             iaload => {
-                let index = frame.pop();
-                let obj = frame.pop();
-                let obj = ObjectPtr::from_val(obj).unwrap();
+                let index = frame.pop() as usize;
+                let array = frame.pop();
 
-                frame.push(obj.get_from_array(index as usize));
+                let vm = VM_HANDLER.get().unwrap();
+                match ObjectPtr::from_val(array) {
+                    None => {
+                        let npe = create_throwable("java/lang/NullPointerException", self);
+
+                        *result = Some(npe.to_val());
+                        return InstructionResult::Exception;
+                    }
+                    Some(array) => {
+                        match array.get_from_array(index) {
+                            None => {
+                                let exc = create_throwable("java/lang/ArrayIndexOutOfBoundsException", self);
+
+                                *result = Some(exc.to_val());
+                                return InstructionResult::Exception;
+                            }
+                            Some(val) => {
+                                frame.push(val);
+                            }
+                        }
+
+                    }
+                }
             }
             lstore_0 | lstore_1 | lstore_2  => {
                 let val = frame.pop();
@@ -300,11 +411,32 @@ impl VMThread {
             }
             iastore => {
                 let val = frame.pop() as u32;
-                let index = frame.pop();
-                let obj = frame.pop();
-                let obj = ObjectPtr::from_val(obj).unwrap();
+                let index = frame.pop() as usize;
+                let array = frame.pop();
 
-                obj.store_to_array(index as usize, val as u64);
+                let vm = VM_HANDLER.get().unwrap();
+                match ObjectPtr::from_val(array) {
+                    None => {
+                        let class = vm.load_class("java/lang/NullPointerException").unwrap();
+                        let npe = vm.object_arena.new_object(class);
+
+                        *result = Some(npe.to_val());
+                        return InstructionResult::Exception;
+                    }
+                    Some(array) => {
+                        match array.store_to_array(index, val as u64) {
+                            None => {
+                                let class = vm.load_class("java/lang/ArrayIndexOutOfBoundsException").unwrap();
+                                let exc = vm.object_arena.new_object(class);
+
+                                *result = Some(exc.to_val());
+                                return InstructionResult::Exception;
+                            }
+                            Some(_) => {}
+                        }
+
+                    }
+                }
             }
             aastore => {
                 let val = frame.pop();
@@ -336,11 +468,11 @@ impl VMThread {
                 frame.push(res as u64);
             }
             dadd => {
-                let b = utof(frame.pop());
-                let a = utof(frame.pop());
+                let b = utof2(frame.pop());
+                let a = utof2(frame.pop());
 
                 let res = a + b;
-                frame.push(ftou(res));
+                frame.push(ftou2(res));
             }
             isub => {
                 let b = frame.pop() as u32;
@@ -350,11 +482,11 @@ impl VMThread {
                 frame.push(res as u64);
             }
             dsub => {
-                let b = utof(frame.pop());
-                let a = utof(frame.pop());
+                let b = utof2(frame.pop());
+                let a = utof2(frame.pop());
 
                 let res = a - b;
-                frame.push(ftou(res));
+                frame.push(ftou2(res));
             }
             imul => {
                 let b = frame.pop() as u32;
@@ -364,22 +496,22 @@ impl VMThread {
                 frame.push(res as u64);
             }
             dmul => {
-                let b = utof(frame.pop());
-                let a = utof(frame.pop());
+                let b = utof2(frame.pop());
+                let a = utof2(frame.pop());
 
                 let res = a * b;
-                frame.push(ftou(res));
+                frame.push(ftou2(res));
             }
             ddiv => {
-                let b = utof(frame.pop());
-                let a = utof(frame.pop());
+                let b = utof2(frame.pop());
+                let a = utof2(frame.pop());
 
                 let res = a / b;
-                frame.push(ftou(res));
+                frame.push(ftou2(res));
             }
             dneg => {
-                let a = utof(frame.pop());
-                frame.push(ftou(-a));
+                let a = utof2(frame.pop());
+                frame.push(ftou2(-a));
             }
             iinc => {
                 let index = code.code[frame.pc + 1] as usize;
@@ -393,6 +525,16 @@ impl VMThread {
                 let val = frame.pop() as u32;
 
                 frame.push(val as u64)
+            }
+            l2d => {
+                let val = frame.pop() as f64;
+
+                frame.push(ftou2(val));
+            }
+            f2d => {
+                let val = utof(frame.pop() as u32);
+
+                frame.push(ftou2(val as f64));
             }
             ifne => {
                 let offset = i16::from_be_bytes(code.code[frame.pc + 1..frame.pc + 3].try_into()
@@ -523,13 +665,28 @@ impl VMThread {
                         let arg_no = method.descriptor.parameters.len();
 
                         let obj = frame.peek_nth(arg_no);
-                        let obj = ObjectPtr::from_val(obj).unwrap(); // TODO: NPE
+                        let obj = match ObjectPtr::from_val(obj) {
+                            None => {
+                                let npe = create_throwable("java/lang/NullPointerException", self);
+
+                                *result = Some(npe.to_val());
+                                return InstructionResult::Exception;
+                            }
+                            Some(obj) => obj
+                        };
                         let obj_class = obj.get_class();
 
                         let res = invoke_virtual(obj_class, *other_class, (*other_class, *index))
                             .unwrap();
 
-                        self.method(res, arg_no + 1);
+                        let res = self.method(res, arg_no + 1);
+                        match res {
+                            Ok(_) => {}
+                            Err(obj) => {
+                                *result = Some(obj.to_val());
+                                return InstructionResult::Exception
+                            }
+                        }
                     }
                     _ => panic!()
                 }
@@ -548,7 +705,14 @@ impl VMThread {
 
                         let res = invoke_special(*other_class, method).unwrap();
 
-                        self.method(res, 1);
+                        let res = self.method(res, 1);
+                        match res {
+                            Ok(_) => {}
+                            Err(obj) => {
+                                *result = Some(obj.to_val());
+                                return InstructionResult::Exception
+                            }
+                        }
                     }
                     _ => panic!()
                 }
@@ -565,7 +729,15 @@ impl VMThread {
                         let method = &other_class.data.methods[*index];
                         assert!(method.is_static());
 
-                        self.method((*other_class, *index), method.descriptor.parameters.len());
+                        let res = self.method((*other_class, *index),
+                                              method.descriptor.parameters.len());
+                        match res {
+                            Ok(_) => {}
+                            Err(obj) => {
+                                *result = Some(obj.to_val());
+                                return InstructionResult::Exception
+                            }
+                        }
                     }
                     _ => panic!()
                 }
@@ -623,8 +795,29 @@ impl VMThread {
             },
             arraylength => {
                 let obj = frame.pop();
-                let obj = ObjectPtr::from_val(obj).unwrap();
-                frame.push(obj.get_field(0));
+                match ObjectPtr::from_val(obj) {
+                    None => {
+                        let vm = VM_HANDLER.get().unwrap();
+                        let npe_class = vm.load_class("java/lang/NullPointerException").unwrap();
+                        let npe = vm.object_arena.new_object(npe_class);
+                        
+                        *result = Some(npe.to_val());
+                        return InstructionResult::Exception;
+                    }
+                    Some(obj) => frame.push(obj.get_field(0))
+                }
+            }
+            athrow => {
+                let obj = frame.pop();
+
+                let vm = VM_HANDLER.get().unwrap();
+                let option = ObjectPtr::from_val(obj);
+                let obj = option.unwrap_or_else(|| {
+                    create_throwable("java/lang/NullPointerException", self)
+                });
+
+                *result = Some(obj.to_val());
+                return InstructionResult::Exception
             }
             breakpoint | impdep1 | impdep2 => todo!("Instruction {} not yet implemented", instr),
         }
@@ -686,4 +879,42 @@ fn invoke_virtual(class: ClassRef, resolved_class: ClassRef, method_ref: MethodR
     }
 
     // TODO: Maximally specific superinterface
+}
+
+fn create_throwable(name: &str, thread: &VMThread) -> ObjectPtr {
+    let vm = VM_HANDLER.get().unwrap();
+    let class= vm.load_class(name).unwrap();
+    let obj = vm.object_arena.new_object(class);
+
+    let mut init_thread = VMThread::new();
+    let descriptor = MethodDescriptor {
+        parameters: vec![],
+        ret: FieldType::V
+    };
+    if let Some(method) = class.find_method("<init>", &descriptor) {
+        init_thread.start(method, smallvec![obj.to_val()]);
+    } else {
+        panic!();
+    }
+
+    let class = vm.load_class("java/lang/StackTraceElement").unwrap();
+    let array_class = vm.load_class("[java/lang/StackTraceElement").unwrap();
+    let array = vm.object_arena.new_array(array_class, thread.stack.len()-1);
+
+    for i in 1..thread.stack.len() {
+        let obj = vm.object_arena.new_object(class);
+        let class_data = &thread.stack[i].methodref.0.data;
+
+        let declaring_class = vm.string_pool.intern_string(class_data.name.as_str());
+        obj.put_field(0, declaring_class.to_val());
+        let method_name = vm.string_pool.intern_string(
+            class_data.methods[thread.stack[i].methodref.1].name.as_str());
+        obj.put_field(1, method_name.to_val());
+
+        array.store_to_array(thread.stack.len()-1-i, obj.to_val());
+    }
+
+    obj.put_field(0, array.to_val());
+
+    obj
 }

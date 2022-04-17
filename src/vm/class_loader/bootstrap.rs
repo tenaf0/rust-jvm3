@@ -11,12 +11,12 @@ use crate::class_parser::constants::{AccessFlagMethod, CPInfo};
 use crate::class_parser::parse_class;
 use crate::class_parser::types::ParsedClass;
 use crate::class_parser::constants::CPTag;
-use crate::helper::{ftou, has_flag};
+use crate::helper::{ftou2, has_flag};
 use crate::vm::class::class::{ClassRef, ClassState};
 use crate::vm::class::constant_pool::{CPEntry, UnresolvedReference};
 use crate::vm::class::constant_pool::CPEntry::{ConstantString, ConstantValue, UnresolvedSymbolicReference};
 use crate::vm::class::field::{Field, FieldType};
-use crate::vm::class::method::{Code, JvmMethod, MethodDescriptor, MethodRepr, NativeMethod};
+use crate::vm::class::method::{Code, ExceptionHandler, JvmMethod, MethodDescriptor, MethodRepr, NativeMethod};
 use crate::vm::class::method::MethodRepr::Native;
 use crate::vm::class_loader::array::create_primitive_array_class;
 use crate::vm::class_loader::native::{init_native_store, NATIVE_FN_STORE, NativeMethodRef};
@@ -64,7 +64,8 @@ impl VM {
                                 max_locals: 1,
                                 code: vec![
                                     177
-                                ]
+                                ],
+                                exception_handlers: vec![]
                             })
                         })
                     }
@@ -101,7 +102,7 @@ impl VM {
                                 FieldType::L("java/lang/ClassLoader".to_string()),
                                 FieldType::L("java/lang/String".to_string())],
                             ret: FieldType::L("java/lang/Class".to_string()) },
-                        repr: MethodRepr::Native(NativeMethod { fn_ptr: |class, args, exc| {
+                        repr: MethodRepr::Native(NativeMethod { fn_ptr: |thread, args, exc| {
                             // first argument is the bootstrap class loader (null), second is a
                             // String object which denotes the name of the class that should be loaded
 
@@ -196,7 +197,7 @@ impl VM {
             return Ok(class);
         }
 
-        println!("Started loading class: {}", name);
+        eprintln!("Started loading class: {}", name);
 
         if name.starts_with("[") {
             return self.load_array_class(name);
@@ -206,7 +207,7 @@ impl VM {
         let mut buf = Vec::with_capacity(INITIAL_CLASS_BUFFER_SIZE);
         file.read_to_end(&mut buf).map_err(|e| e.to_string())?;
 
-        println!("Loaded class file {:?}", name);
+        eprintln!("Loaded class file {:?}", name);
 
         let class = self.derive_class(ObjectPtr::null(), name, &mut buf)?;
 
@@ -268,7 +269,7 @@ impl VM {
                     buf[..4].clone_from_slice(&num1[..]);
                     buf[4..].clone_from_slice(&num2[..]);
 
-                    constant_pool.push(ConstantValue(ftou(f64::from_be_bytes(buf))));
+                    constant_pool.push(ConstantValue(ftou2(f64::from_be_bytes(buf))));
                 }
 
                 Class(name) => {
@@ -346,10 +347,40 @@ impl VM {
                     let mut code_buf = vec![0; code_length];
                     code_buf.clone_from_slice(&a.info[8..8+code_length]);
 
+                    let exception_start = 8+code_length;
+                    let exception_table_length = u16::from_be_bytes(
+                        a.info[exception_start..exception_start+2].try_into().unwrap()) as usize;
+
+                    let mut exception_start = exception_start+2;
+                    let mut handler : Vec<(u16, u16, u16, u16)> = Vec::with_capacity(exception_table_length);
+                    for _ in 0..exception_table_length {
+                        handler.push((
+                            u16::from_be_bytes(
+                                a.info[exception_start..exception_start+2].try_into().unwrap()),
+                            u16::from_be_bytes(
+                                a.info[exception_start+2..exception_start+4].try_into().unwrap()),
+                            u16::from_be_bytes(
+                                a.info[exception_start+4..exception_start+6].try_into().unwrap()),
+                            u16::from_be_bytes(
+                                a.info[exception_start+6..exception_start+8].try_into().unwrap())
+                            ));
+                        exception_start += 8;
+                    }
+
+                    let exception_handlers = handler.iter().map(|(a,b,c,d)| {
+                        ExceptionHandler {
+                            start_pc: *a as usize,
+                            end_pc: *b as usize,
+                            handler_pc: *c as usize,
+                            catch_type: None // TODO
+                        }
+                    }).collect();
+
                     code = Some(Code {
                         max_stack: u16::from_be_bytes(a.info[..2].try_into().unwrap()) as usize,
                         max_locals: u16::from_be_bytes(a.info[2..4].try_into().unwrap()) as usize,
-                        code: code_buf
+                        code: code_buf,
+                        exception_handlers
                     });
                 }
             }

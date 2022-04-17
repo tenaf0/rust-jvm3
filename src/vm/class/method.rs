@@ -1,7 +1,7 @@
 use std::fmt::{Debug, Formatter};
 use smallvec::SmallVec;
 use crate::class_parser::constants::AccessFlagMethod;
-use crate::ClassRef;
+use crate::{ClassRef, VMThread};
 use crate::helper::has_flag;
 use crate::vm::class::field::FieldType;
 
@@ -66,7 +66,7 @@ pub struct JvmMethod {
 
 pub const MAX_NO_OF_ARGS: usize = 64;
 
-pub type NativeFnPtr = fn(ClassRef, SmallVec<[u64; MAX_NO_OF_ARGS]>,
+pub type NativeFnPtr = fn(&VMThread, SmallVec<[u64; MAX_NO_OF_ARGS]>,
                           exception: &mut Option<String>) -> Option<u64>;
 
 pub struct NativeMethod {
@@ -80,9 +80,18 @@ impl Debug for NativeMethod {
 }
 
 #[derive(Debug)]
+pub struct ExceptionHandler {
+    pub start_pc: usize,
+    pub end_pc: usize,
+    pub handler_pc: usize,
+    pub catch_type: Option<ClassRef>
+}
+
+#[derive(Debug)]
 pub struct Code {
     pub max_stack: usize,
     pub max_locals: usize,
-    pub code: Vec<u8>
+    pub code: Vec<u8>,
+    pub exception_handlers: Vec<ExceptionHandler>
     // TODO: exception table, attributes
 }

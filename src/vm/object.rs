@@ -36,6 +36,10 @@ impl ObjectPtr {
         }
     }
 
+    pub fn to_val(&self) -> u64 {
+        self.ptr as u64
+    }
+
     pub fn get_class(&self) -> ClassRef {
         unsafe {
             let header: &ObjectHeader = &*self.ptr.cast();
@@ -70,22 +74,26 @@ impl ObjectPtr {
         }
     }
 
-    pub fn get_from_array(&self, index: usize) -> u64 {
+    pub fn get_from_array(&self, index: usize) -> Option<u64> {
         let length = self.get_field(0);
-        assert!(index <= length as usize);
+        if index >= length as usize {
+            return None;
+        }
 
         let mut ptr: *const ObjectHeader = self.ptr.cast();
         ptr = unsafe { ptr.offset(1) };
         let ptr: *const AtomicU64 = ptr.cast();
 
         unsafe {
-            (*ptr.offset(1 + index as isize)).load(Ordering::Relaxed)
+            Some((*ptr.offset(1 + index as isize)).load(Ordering::Relaxed))
         }
     }
 
-    pub fn store_to_array(&self, index: usize, val: u64) {
+    pub fn store_to_array(&self, index: usize, val: u64) -> Option<()> {
         let length = self.get_field(0);
-        assert!(index <= length as usize);
+        if index >= length as usize {
+            return None;
+        }
 
         let mut ptr: *const ObjectHeader = self.ptr.cast();
         ptr = unsafe { ptr.offset(1) };
@@ -94,6 +102,7 @@ impl ObjectPtr {
         unsafe {
             (*ptr.offset(1 + index as isize)).store(val, Ordering::Relaxed)
         }
+        Some(())
     }
 }
 
@@ -147,7 +156,7 @@ mod tests {
 
         let obj = vm.object_arena.new_array(class, 32);
         for i in 0..32 {
-            assert_eq!(obj.get_from_array(i), 0);
+            assert_eq!(obj.get_from_array(i), Some(0));
         }
 
         for i in 0..32 {
@@ -155,7 +164,7 @@ mod tests {
         }
 
         for i in 0..32 {
-            assert_eq!(obj.get_from_array(i), i as u64);
+            assert_eq!(obj.get_from_array(i), Some(i as u64));
         }
     }
 }

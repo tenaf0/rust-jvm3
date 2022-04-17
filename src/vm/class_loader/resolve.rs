@@ -155,7 +155,7 @@ pub fn initialize_class(class: ClassRef) -> Result<(), Exception> {
     }
 
 
-    println!("Initializing {}", class.data.name);
+    eprintln!("Initializing {}", class.data.name);
 
     // TODO: Apply ConstantValue attribute
     let parent_list = vec![class.data.superclass];
@@ -184,15 +184,10 @@ pub fn initialize_class(class: ClassRef) -> Result<(), Exception> {
                 FAILED(e) => return Err(e),
                 _ => panic!()
             }
-
-            println!("Initialized {}", class.data.name);
-
-            Ok(())
         },
-        None => {
-            println!("Initialized {}", class.data.name);
-
-            Ok(())
-        }
+        None => {}
     }
+
+    eprintln!("Initialized {}", class.data.name);
+    Ok(())
 }

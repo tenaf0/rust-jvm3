@@ -48,7 +48,7 @@ impl StringPool {
 
         let obj = self.add_string(value);
 
-        println!("Interned string {}", value);
+        eprintln!("Interned string {}", value);
 
         let mut interned_map = self.interned_string.write().unwrap();
         interned_map.insert(value.to_string(), obj);
