@@ -203,7 +203,10 @@ impl VM {
             return self.load_array_class(name);
         }
 
-        let mut file = find_class_file(name, "jdk/target")?;
+        let classpath = self.args.read().unwrap();
+        let classpath = classpath.classpath.as_ref().map(|s| s.as_str())
+            .unwrap_or("jdk/target");
+        let mut file = find_class_file(name, classpath)?;
         let mut buf = Vec::with_capacity(INITIAL_CLASS_BUFFER_SIZE);
         file.read_to_end(&mut buf).map_err(|e| e.to_string())?;
 

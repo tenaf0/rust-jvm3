@@ -3,13 +3,18 @@ use std::fs::File;
 use std::pin::Pin;
 use std::ptr::null;
 use std::sync::atomic::{AtomicU8, Ordering};
-use std::sync::Mutex;
+use std::sync::{Mutex, RwLock};
+
+use clap::Parser;
+
 use crate::{Class};
 use crate::vm::class::class::ClassRef;
 use crate::vm::pool::object::ObjectArena;
 use crate::vm::pool::string::StringPool;
 
 pub struct VM {
+    pub args: RwLock<VmArgs>,
+
     pub classes: Mutex<                     // Responsible for ensuring that only a single class loader can grow it
         Vec<Pin<Box<Class>>>                // Indirection is required due to pinning -- since
       >,                                    // objects will point to the class directly, we
@@ -28,9 +33,22 @@ pub struct VM {
     pub last_instruction: AtomicU8,
 }
 
+#[derive(Parser, Debug)]
+#[clap(version, about)]
+pub struct VmArgs {
+    #[clap(long = "cp")]
+    pub classpath: Option<String>,
+    pub main_class: String,
+    pub java_args: Vec<String>,
+
+    #[clap(long)]
+    pub print_trace: bool
+}
+
 impl VM {
     pub fn init() -> VM {
         let mut vm = VM {
+            args: RwLock::new(VmArgs::parse()),
             classes: Mutex::new(vec![]),
             bootstrap_cl_class_list: Default::default(),
             object_arena: Default::default(),

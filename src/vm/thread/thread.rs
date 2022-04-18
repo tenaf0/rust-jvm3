@@ -22,7 +22,6 @@ pub type MethodRef = (ClassRef, usize);
 
 const STACK_SIZE: usize = 36;
 
-const PRINT_TRACE: bool = false;
 pub const ENABLE_STATS: bool = true;
 
 #[derive(Debug)]
@@ -71,7 +70,10 @@ impl VMThread {
                 self.status = FINISHED(res);
             }
             Err(obj) => {
-                let string = obj.get_class().data.name.clone();
+                use std::io::Write;
+
+                let mut buf: Vec<u8> = Vec::with_capacity(200);
+                let _ = write!(&mut buf, "Exception {}\n", obj.get_class().data.name);
 
                 let array = ObjectPtr::from_val(obj.get_field(0)).unwrap();
                 let length = array.get_field(0);
@@ -80,12 +82,13 @@ impl VMThread {
                         .unwrap();
                     let declaring_class = stack_elem.get_field(0);
                     let method_name = stack_elem.get_field(1);
-                    eprintln!(" at {}:{}", StrArena::get_string(ObjectPtr::from_val(declaring_class)
-                        .unwrap()), StrArena::get_string(ObjectPtr::from_val(method_name)
-                        .unwrap()));
+
+                    let _ = write!(&mut buf, "      at {}.{}\n",
+                           StrArena::get_string(ObjectPtr::from_val(declaring_class).unwrap()),
+                           StrArena::get_string(ObjectPtr::from_val(method_name).unwrap()));
                 }
 
-                self.status = FAILED(string);
+                self.status = FAILED(String::from_utf8(buf).unwrap());
             }
         }
     }
@@ -94,6 +97,9 @@ impl VMThread {
         let (class, method) = method_ref.clone();
         let class = &*class;
         let method = &class.data.methods[method];
+
+        let VM = VM_HANDLER.get().unwrap();
+        let PRINT_TRACE = VM.args.read().unwrap().print_trace;
 
         if PRINT_TRACE {
             println!("{}:{} {:?}", class.data.name, method.name, method.descriptor);
@@ -207,13 +213,15 @@ impl VMThread {
         let instr = code.code[frame.pc];
         let instruction = Instruction::from_primitive(instr);
 
+        let VM = VM_HANDLER.get().unwrap();
+        let PRINT_TRACE = VM.args.read().unwrap().print_trace;
+
         if PRINT_TRACE {
             println!("{}: {:?}", frame.pc, instruction);
         }
 
         if ENABLE_STATS {
-            let vm = VM_HANDLER.get().unwrap();
-            vm.last_instruction.store(instr, Ordering::Release);
+            VM.last_instruction.store(instr, Ordering::Release);
         }
 
         match instruction {
@@ -284,11 +292,9 @@ impl VMThread {
                 let index = frame.pop() as usize;
                 let array = frame.pop();
 
-                let vm = VM_HANDLER.get().unwrap();
                 match ObjectPtr::from_val(array) {
                     None => {
-                        let class = vm.load_class("java/lang/NullPointerException").unwrap();
-                        let npe = vm.object_arena.new_object(class);
+                        let npe = create_throwable("java/lang/NullPointerException", self);
 
                         *result = Some(npe.to_val());
                         return InstructionResult::Exception;
@@ -296,8 +302,8 @@ impl VMThread {
                     Some(array) => {
                         match array.get_from_array(index) {
                             None => {
-                                let class = vm.load_class("java/lang/ArrayIndexOutOfBoundsException").unwrap();
-                                let exc = vm.object_arena.new_object(class);
+                                let exc = create_throwable("java/lang/ArrayIndexOutOfBoundsException",
+                                                           self);
 
                                 *result = Some(exc.to_val());
                                 return InstructionResult::Exception;
@@ -370,7 +376,6 @@ impl VMThread {
                 let index = frame.pop() as usize;
                 let array = frame.pop();
 
-                let vm = VM_HANDLER.get().unwrap();
                 match ObjectPtr::from_val(array) {
                     None => {
                         let npe = create_throwable("java/lang/NullPointerException", self);
@@ -414,11 +419,9 @@ impl VMThread {
                 let index = frame.pop() as usize;
                 let array = frame.pop();
 
-                let vm = VM_HANDLER.get().unwrap();
                 match ObjectPtr::from_val(array) {
                     None => {
-                        let class = vm.load_class("java/lang/NullPointerException").unwrap();
-                        let npe = vm.object_arena.new_object(class);
+                        let npe = create_throwable("java/lang/NullPointerException", self);
 
                         *result = Some(npe.to_val());
                         return InstructionResult::Exception;
@@ -426,8 +429,8 @@ impl VMThread {
                     Some(array) => {
                         match array.store_to_array(index, val as u64) {
                             None => {
-                                let class = vm.load_class("java/lang/ArrayIndexOutOfBoundsException").unwrap();
-                                let exc = vm.object_arena.new_object(class);
+                                let exc = create_throwable("java/lang/ArrayIndexOutOfBoundsException",
+                                                           self);
 
                                 *result = Some(exc.to_val());
                                 return InstructionResult::Exception;
@@ -442,9 +445,27 @@ impl VMThread {
                 let val = frame.pop();
                 let index = frame.pop();
                 let obj = frame.pop();
-                let obj = ObjectPtr::from_val(obj).unwrap();
+                let obj = match ObjectPtr::from_val(obj) {
+                    None => {
+                        let npe = create_throwable("java/lang/NullPointerException", self);
 
-                obj.store_to_array(index as usize, val);
+                        *result = Some(npe.to_val());
+                        return InstructionResult::Exception;
+                    }
+                    Some(obj) => obj
+                };
+
+                let res = obj.store_to_array(index as usize, val);
+                match res {
+                    None => {
+                        let exc = create_throwable("java/lang/ArrayIndexOutOfBoundsException",
+                                                   self);
+
+                        *result = Some(exc.to_val());
+                        return InstructionResult::Exception;
+                    }
+                    Some(_) => {}
+                }
             }
             pop => {
                 let _ = frame.pop();
@@ -509,6 +530,13 @@ impl VMThread {
                 let res = a / b;
                 frame.push(ftou2(res));
             }
+            lrem => {
+                let b = frame.pop() as i64;
+                let a = frame.pop() as i64;
+
+                let res = a - (a / b) * b;
+                frame.push(res as u64);
+            }
             dneg => {
                 let a = utof2(frame.pop());
                 frame.push(ftou2(-a));
@@ -536,13 +564,30 @@ impl VMThread {
 
                 frame.push(ftou2(val as f64));
             }
-            ifne => {
+            lcmp => {
+                let b = frame.pop() as i64;
+                let a = frame.pop() as i64;
+
+                if a < b {
+                    frame.push(-1i64 as u64);
+                } else if a > b {
+                    frame.push(1i64 as u64);
+                } else {
+                    frame.push(0i64 as u64);
+                }
+            }
+            ifeq | ifne | iflt | ifle | ifgt | ifge => {
                 let offset = i16::from_be_bytes(code.code[frame.pc + 1..frame.pc + 3].try_into()
                     .unwrap()) as isize;
 
                 let a = frame.pop() as i32;
                 let cmp = match instruction {
+                    ifeq => a == 0,
                     ifne => a != 0,
+                    iflt => a < 0,
+                    ifle => a <= 0,
+                    ifgt => a > 0,
+                    ifge => a >= 0,
                     _ => panic!()
                 };
                 if cmp {
@@ -753,7 +798,7 @@ impl VMThread {
                     CPEntry::ResolvedSymbolicReference(
                         SymbolicReference::ClassReference(other_class)) => {
                         // TODO: It should not be an abstract class
-                        let object = VM_HANDLER.get().unwrap().object_arena.new_object(other_class);
+                        let object = VM.object_arena.new_object(other_class);
                         frame.push(object.ptr as u64);
                     }
                     _ => panic!("Unexpected pattern: {:?}", entry)
@@ -764,18 +809,15 @@ impl VMThread {
                 let name = FieldType::convert_newarray_type(atype);
                 let length = frame.pop();
 
-                let vm = VM_HANDLER.get().unwrap();
-                let array_class = vm.load_class(name).unwrap();
+                let array_class = VM.load_class(name).unwrap();
 
-                let object = vm.object_arena.new_array(array_class, length as usize);
+                let object = VM.object_arena.new_array(array_class, length as usize);
                 frame.push(object.ptr as u64);
             }
             anewarray => {
                 let index = u16::from_be_bytes(code.code[frame.pc + 1..frame.pc + 3].try_into()
                     .unwrap());
                 let length = frame.pop();
-
-                let vm = VM_HANDLER.get().unwrap();
 
                 resolve(ClassRef::new(class), index as usize);
                 let entry = class.get_cp_entry(index as usize);
@@ -785,9 +827,9 @@ impl VMThread {
                         SymbolicReference::ClassReference(other_class)) => {
                         let mut array_class = other_class.data.name.clone();
                         array_class.insert(0, '[');
-                        let array_class = vm.load_class(array_class.as_str()).unwrap();
+                        let array_class = VM.load_class(array_class.as_str()).unwrap();
 
-                        let object = vm.object_arena.new_array(array_class, length as usize);
+                        let object = VM.object_arena.new_array(array_class, length as usize);
                         frame.push(object.ptr as u64);
                     }
                     _ => panic!("Unexpected pattern: {:?}", entry)
@@ -797,9 +839,7 @@ impl VMThread {
                 let obj = frame.pop();
                 match ObjectPtr::from_val(obj) {
                     None => {
-                        let vm = VM_HANDLER.get().unwrap();
-                        let npe_class = vm.load_class("java/lang/NullPointerException").unwrap();
-                        let npe = vm.object_arena.new_object(npe_class);
+                        let npe = create_throwable("java/lang/NullPointerException", self);
                         
                         *result = Some(npe.to_val());
                         return InstructionResult::Exception;
@@ -810,7 +850,6 @@ impl VMThread {
             athrow => {
                 let obj = frame.pop();
 
-                let vm = VM_HANDLER.get().unwrap();
                 let option = ObjectPtr::from_val(obj);
                 let obj = option.unwrap_or_else(|| {
                     create_throwable("java/lang/NullPointerException", self)
@@ -840,7 +879,7 @@ impl VMThread {
 fn invoke_special(class: ClassRef, method: &Method) -> Result<MethodRef, String> {
     // TODO: other_class may differ if direct superclass
 
-    let vm = VM_HANDLER.get().unwrap();
+    let VM = VM_HANDLER.get().unwrap();
 
     if let Some(res) = class.find_method(method.name.as_str(), &method.descriptor) {
         return Ok(res)
@@ -850,7 +889,7 @@ fn invoke_special(class: ClassRef, method: &Method) -> Result<MethodRef, String>
     }
 
     if class.is_interface() {
-        if let Some(res) = vm.object_class.find_method(method.name.as_str(),
+        if let Some(res) = VM.object_class.find_method(method.name.as_str(),
                                                        &method.descriptor) {
             if has_flag(res.0.data.methods[res.1].flag, AccessFlagMethod::ACC_PUBLIC) {
                 return Ok(res);
@@ -882,9 +921,9 @@ fn invoke_virtual(class: ClassRef, resolved_class: ClassRef, method_ref: MethodR
 }
 
 fn create_throwable(name: &str, thread: &VMThread) -> ObjectPtr {
-    let vm = VM_HANDLER.get().unwrap();
-    let class= vm.load_class(name).unwrap();
-    let obj = vm.object_arena.new_object(class);
+    let VM = VM_HANDLER.get().unwrap();
+    let class= VM.load_class(name).unwrap();
+    let obj = VM.object_arena.new_object(class);
 
     let mut init_thread = VMThread::new();
     let descriptor = MethodDescriptor {
@@ -897,17 +936,17 @@ fn create_throwable(name: &str, thread: &VMThread) -> ObjectPtr {
         panic!();
     }
 
-    let class = vm.load_class("java/lang/StackTraceElement").unwrap();
-    let array_class = vm.load_class("[java/lang/StackTraceElement").unwrap();
-    let array = vm.object_arena.new_array(array_class, thread.stack.len()-1);
+    let class = VM.load_class("java/lang/StackTraceElement").unwrap();
+    let array_class = VM.load_class("[java/lang/StackTraceElement").unwrap();
+    let array = VM.object_arena.new_array(array_class, thread.stack.len()-1);
 
     for i in 1..thread.stack.len() {
-        let obj = vm.object_arena.new_object(class);
+        let obj = VM.object_arena.new_object(class);
         let class_data = &thread.stack[i].methodref.0.data;
 
-        let declaring_class = vm.string_pool.intern_string(class_data.name.as_str());
+        let declaring_class = VM.string_pool.intern_string(class_data.name.as_str());
         obj.put_field(0, declaring_class.to_val());
-        let method_name = vm.string_pool.intern_string(
+        let method_name = VM.string_pool.intern_string(
             class_data.methods[thread.stack[i].methodref.1].name.as_str());
         obj.put_field(1, method_name.to_val());
 

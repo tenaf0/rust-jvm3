@@ -2,17 +2,20 @@ package hu.garaba;
 
 public class Main {
 	public static void main(String[] args) {
-		var main = new Main();
-		//try {
-			int[] arg = new int[10];
-			main.step1(arg);
-		//} catch (Exception e) {
-		//	for (var elem : e.getStackTrace()) {
-		//		System.out.println(elem.getClassName());
-		//		System.out.println(elem.getMethodName());
-		//		System.out.println("");
-		//	}
-		//}
+		for (var s : args) {
+			System.out.println(s);
+		}
+	}
+
+	public static long gcd(long a, long b) {
+		if (a < b) {
+			return gcd(b, a);
+		}
+
+		if (b == 0) {
+			return a;
+		}
+		return gcd(b, a % b);
 	}
 
 	private void step1(int[] arg) {
