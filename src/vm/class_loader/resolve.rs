@@ -1,19 +1,12 @@
-
-
 use std::thread;
 use smallvec::smallvec;
 use crate::{Class, ClassRef, VM_HANDLER, VMThread};
-use crate::class_parser::constants::AccessFlagMethod;
-use crate::helper::has_flag;
 use crate::ThreadStatus::{FAILED, FINISHED};
 use crate::vm::class::class::ClassState;
 use crate::vm::class::constant_pool::{CPEntry, SymbolicReference, UnresolvedReference};
 
-use crate::vm::class::constant_pool::UnresolvedReference::{ClassReference, FieldReference, MethodReference};
-use crate::vm::class::field::{Field, FieldType};
-use crate::vm::class::method::MethodRepr::Native;
-use crate::vm::class::method::{NativeFnPtr, NativeMethod};
-use crate::vm::class_loader::native::{init_native_store, NATIVE_FN_STORE, NativeMethodRef};
+use crate::vm::class::constant_pool::UnresolvedReference::{ClassReference, FieldReference, InterfaceMethodReference, MethodReference};
+use crate::vm::class::field::FieldType;
 
 type Exception = String;
 
@@ -50,13 +43,14 @@ pub fn resolve(class: ClassRef, index: usize) -> Result<(), Exception> {
         UnresolvedSymbolicReference(method @ MethodReference(class_index, _name, _descriptor)) => {
             resolve(class, *class_index as usize)?;
 
-            // TODO: resolved class should *not* be an interface
-
             match class.get_cp_entry(*class_index as usize) {
                 ResolvedSymbolicReference(SymbolicReference::ClassReference(other_class)) => {
-                    let res = resolve_method(*other_class, method, false)?;
+                    if other_class.is_interface() {
+                        return Err(format!("Method reference's class should not be an interface \
+                        in {:?}", method));
+                    }
 
-                    initialize_class(*other_class);
+                    let res = resolve_method(*other_class, method, false)?;
 
                     class.set_cp_entry(index, ResolvedSymbolicReference(res));
 
@@ -99,7 +93,6 @@ pub fn resolve(class: ClassRef, index: usize) -> Result<(), Exception> {
                             class.set_cp_entry(index, ResolvedSymbolicReference(
                                 SymbolicReference::FieldReference(*other_class, !field.is_static(), field_index)));
 
-                            initialize_class(*other_class);
                             // TODO: Recursive lookup
                         }
                     }
@@ -109,6 +102,33 @@ pub fn resolve(class: ClassRef, index: usize) -> Result<(), Exception> {
 
             Ok(())
         },
+        UnresolvedSymbolicReference(method @ InterfaceMethodReference(class_index, name,
+            descriptor))
+        => {
+            resolve(class, *class_index as usize)?;
+
+            match class.get_cp_entry(*class_index as usize) {
+                ResolvedSymbolicReference(SymbolicReference::ClassReference(other_class)) => {
+                    if !other_class.is_interface() {
+                        return Err(format!("Interface method reference's class should be an \
+                        interface in {:?}", method)); // IncompatibleClassChangeError
+                    }
+
+                    let res = resolve_interface_method(*other_class, method)?;
+                    match res {
+                        SymbolicReference::ClassReference(_) => {}
+                        SymbolicReference::MethodReference(c, ind) => {
+                            println!("{:?} {}", c.data, ind)
+                        }
+                        SymbolicReference::FieldReference(_, _, _) => {}
+                    }
+                    class.set_cp_entry(index, ResolvedSymbolicReference(res));
+
+                    Ok(())
+                }
+                _ => panic!()
+            }
+        }
         _ => Ok(())
     }
 }
@@ -139,6 +159,31 @@ fn resolve_method(class: ClassRef, method: &UnresolvedReference, superclass: boo
         _ => panic!()
     }
 }
+
+fn resolve_interface_method(class: ClassRef, method: &UnresolvedReference) -> Result<SymbolicReference, Exception> {
+    match method {
+        InterfaceMethodReference(_, name, descriptor) => {
+            // signature-polymorph methods first
+            if let Some((_, i)) = class.find_method(name, descriptor) {
+                return Ok(SymbolicReference::MethodReference(class, i));
+            }
+
+            let vm = VM_HANDLER.get().unwrap();
+            if let Some((m, i)) = vm.object_class.find_method(name, descriptor) {
+                let method = &m.data.methods[i];
+                if method.is_public() && !method.is_static() {
+                    return Ok(SymbolicReference::MethodReference(vm.object_class, i));
+                }
+            }
+
+            // TODO: maximally-specific superinterface method
+
+            Err(format!("No interface method found: {:?}", method))
+        }
+        _ => panic!()
+    }
+}
+
 
 pub fn initialize_class(class: ClassRef) -> Result<(), Exception> {
     {

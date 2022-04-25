@@ -47,8 +47,17 @@ pub struct VmArgs {
 
 impl VM {
     pub fn init() -> VM {
+        VM::vm_init(true)
+    }
+
+    pub fn vm_init(parse_args: bool) -> VM {
         let mut vm = VM {
-            args: RwLock::new(VmArgs::parse()),
+            args: RwLock::new(if parse_args { VmArgs::parse() } else { VmArgs {
+                classpath: None,
+                main_class: "".to_string(),
+                java_args: vec![],
+                print_trace: false
+            } }),
             classes: Mutex::new(vec![]),
             bootstrap_cl_class_list: Default::default(),
             object_arena: Default::default(),

@@ -17,7 +17,8 @@ pub enum CPEntry {
 pub enum UnresolvedReference {
     ClassReference(String),
     MethodReference(u16, String, MethodDescriptor), // class reference index, method name, method descriptor
-    FieldReference(u16, String, FieldType)
+    FieldReference(u16, String, FieldType),
+    InterfaceMethodReference(u16, String, MethodDescriptor)
 }
 
 #[derive(Debug, Clone)]

@@ -4,7 +4,7 @@ use std::io::Read;
 use std::path::PathBuf;
 use std::ptr::{null};
 use std::sync::{Mutex};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::AtomicU64;
 use smallvec::{smallvec, SmallVec};
 use crate::{Class, ClassRepr, get_cp_info, Method, ObjectHeader, VM, VM_HANDLER, VMThread};
 use crate::class_parser::constants::{AccessFlagMethod, CPInfo};
@@ -40,6 +40,8 @@ impl VM {
     }
 
     pub fn load_bootstrap_classes(&mut self) {
+        use std::io::Write;
+
         let zero_ptr = null();
 
         let object_name = "java/lang/Object".to_string();
@@ -67,6 +69,48 @@ impl VM {
                                 ],
                                 exception_handlers: vec![]
                             })
+                        })
+                    },
+                    Method {
+                        flag: AccessFlagMethod::ACC_PUBLIC as u16,
+                        name: "equals".to_string(),
+                        descriptor: MethodDescriptor { parameters: vec![FieldType::L
+                            ("java/lang/Object".to_string())], ret: FieldType::Z },
+                        repr: MethodRepr::Jvm(JvmMethod {
+                            code: Some(Code {
+                                max_stack: 2,
+                                max_locals: 2,
+                                code: vec![
+                                    42, // aload_0
+                                    43, // aload_1
+                                    166, 0, 5, // if_acmpne
+                                    4, // iconst_1
+                                    172, // ireturn
+                                    3, // iconst_0
+                                    172 // ireturn
+                                ],
+                                exception_handlers: vec![]
+                            })
+                        })
+                    },
+                    Method {
+                        flag: AccessFlagMethod::ACC_PUBLIC as u16,
+                        name: "toString".to_string(),
+                        descriptor: MethodDescriptor { parameters: vec![],
+                            ret: FieldType::L("java/lang/String".to_string()) },
+                        repr: MethodRepr::Native(NativeMethod {
+                            fn_ptr: |thread, args, exc| {
+                                let this = ObjectPtr::from_val(args[0]).unwrap();
+                                let class_name = &this.get_class().data.name;
+
+                                let mut buf = Vec::with_capacity(class_name.len() + 16);
+                                let _ = write!(&mut buf, "{}@{}", class_name, args[0]);
+
+                                let ptr = VM_HANDLER.get().unwrap()
+                                    .string_pool.add_string(std::str::from_utf8(&buf).unwrap());
+
+                                Some(ptr.to_val())
+                        }
                         })
                     }
                 ],
@@ -313,6 +357,23 @@ impl VM {
 
                     constant_pool.push(UnresolvedSymbolicReference
                         (UnresolvedReference::FieldReference(class, name, descriptor)));
+                }
+                CPInfo::InterfaceMethodref(class, name_and_type) => {
+                    let (name_ind, descriptor_ind) = get_cp_info!(parsed_class, name_and_type,
+                        CPTag::NameAndType, CPInfo::NameAndType(name_index, descriptor_index),
+                        (*name_index, *descriptor_index))?;
+
+                    let name = get_cp_info!(parsed_class, name_ind, CPTag::Utf8,
+                        CPInfo::Utf8(name), name)?.clone();
+                    let descriptor = get_cp_info!(parsed_class, descriptor_ind, CPTag::Utf8,
+                        CPInfo::Utf8(descriptor), descriptor)?.clone();
+
+                    let descriptor = MethodDescriptor::parse(&descriptor)
+                        .ok_or(format!("Could not parse interface method descriptor {}",
+                                       descriptor))?;
+
+                    constant_pool.push(UnresolvedSymbolicReference(
+                        UnresolvedReference::InterfaceMethodReference(class, name, descriptor)));
                 }
 
                 CPInfo::String(ind) => {

@@ -116,7 +116,7 @@ mod tests {
 
     #[test]
     fn get_package_name() {
-        let _vm = VM_HANDLER.get_or_init(VM::init);
+        let _vm = VM_HANDLER.get_or_init(| | VM::vm_init(false));
 
         assert_eq!("java/lang", _vm.object_class.get_package().1);
     }

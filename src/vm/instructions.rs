@@ -6,6 +6,7 @@ pub enum InstructionResult {
     Exception
 }
 
+//UnsafeFromPrimitive
 #[derive(FromPrimitive, Debug, Copy, Clone, PartialEq)]
 #[repr(u8)]
 #[allow(non_camel_case_types)]
@@ -98,6 +99,8 @@ pub enum Instruction {
     ifle = 158,
     if_icmpge = 162,
     if_icmpgt = 163,
+    if_acmpeq = 165,
+    if_acmpne = 166,
     goto = 167,
     ireturn = 172,
     lreturn = 173,
@@ -111,6 +114,7 @@ pub enum Instruction {
     invokevirtual = 182,
     invokespecial = 183,
     invokestatic = 184,
+    invokeinterface = 185,
     new = 187,
     newarray = 188,
     anewarray = 189,
@@ -122,7 +126,7 @@ pub enum Instruction {
     impdep2 = 255
 }
 
-#[inline]
+#[inline(always)]
 pub const fn instruction_length(instr: Instruction) -> usize {
     use Instruction::*;
 
@@ -193,6 +197,7 @@ pub const fn instruction_length(instr: Instruction) -> usize {
         f2d => 1,
         lcmp => 1,
         ifeq | ifne | iflt | ifge | ifgt | ifle | if_icmpge | if_icmpgt => 3,
+        if_acmpeq | if_acmpne => 3,
         goto => 3,
         ireturn => 1,
         lreturn => 1,
@@ -206,6 +211,7 @@ pub const fn instruction_length(instr: Instruction) -> usize {
         invokevirtual => 3,
         invokespecial => 3,
         invokestatic => 3,
+        invokeinterface => 5,
         new => 3,
         newarray => 2,
         anewarray => 3,

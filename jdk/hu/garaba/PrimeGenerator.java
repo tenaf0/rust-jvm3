@@ -20,8 +20,6 @@ public class PrimeGenerator {
 	}
 
 	public static int calc() {
-		var out = System.out;
-
 		for (int i = 0; i < sieve.length; i++) {
 			var p = sieve[i];
 			if (p == 0) {

@@ -50,7 +50,8 @@ impl ObjectPtr {
 
     pub fn get_field(&self, field_no: usize) -> u64 {
         let class = self.get_class();
-        assert!(field_no < class.data.instance_field_count || (field_no == 0 && class.is_array()));
+        debug_assert!(field_no < class.data.instance_field_count
+            || (field_no == 0 && class.is_array()));
 
         let mut ptr: *const ObjectHeader = self.ptr.cast();
         ptr = unsafe { ptr.offset(1) };
@@ -63,7 +64,8 @@ impl ObjectPtr {
 
     pub fn put_field(&self, field_no: usize, val: u64) {
         let class = self.get_class();
-        assert!(field_no < class.data.instance_field_count || (field_no == 0 && class.is_array()));
+        debug_assert!(field_no < class.data.instance_field_count
+            || (field_no == 0 && class.is_array()));
 
         let mut ptr: *const ObjectHeader = self.ptr.cast();
         ptr = unsafe { ptr.offset(1) };
@@ -139,7 +141,7 @@ mod tests {
 
     #[test]
     fn object_test() {
-        let vm = VM_HANDLER.get_or_init(VM::init);
+        let vm = VM_HANDLER.get_or_init(|| VM::vm_init(false));
 
         let obj = vm.object_arena.new_object(vm.string_class);
         assert_eq!(obj.get_field(0), 0);
@@ -150,7 +152,7 @@ mod tests {
 
     #[test]
     fn array_test() {
-        let vm = VM_HANDLER.get_or_init(VM::init);
+        let vm = VM_HANDLER.get_or_init(|| VM::vm_init(false));
 
         let class = vm.load_class("[I").unwrap();
 

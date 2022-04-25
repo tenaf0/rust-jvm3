@@ -2,7 +2,7 @@ use std::cmp::max;
 use std::fmt::{Debug};
 use std::sync::atomic::{AtomicU64, Ordering};
 use smallvec::{SmallVec, smallvec};
-use crate::{Class, Method, VM_HANDLER};
+use crate::{Class, initialize_class, Method, VM_HANDLER};
 use crate::class_parser::constants::{AccessFlagMethod};
 use crate::helper::{ftou2, has_flag, utof, utof2};
 use crate::vm::class::class::ClassRef;
@@ -16,6 +16,7 @@ use crate::vm::object::ObjectPtr;
 use crate::vm::thread::frame::Frame;
 use crate::vm::thread::thread::ThreadStatus::{FAILED, FINISHED, RUNNING};
 use num_enum::FromPrimitive;
+use crate::vm::instructions::InstructionResult::Exception;
 use crate::vm::pool::string::StrArena;
 
 pub type MethodRef = (ClassRef, usize);
@@ -33,14 +34,18 @@ pub enum ThreadStatus {
 
 pub struct VMThread {
     pub status: ThreadStatus,
-    pub stack: SmallVec<[Frame; STACK_SIZE]>
+    pub stack: SmallVec<[Frame; STACK_SIZE]>,
+    PRINT_TRACE: bool
 }
 
 impl VMThread {
     pub fn new() -> VMThread {
+        let VM = VM_HANDLER.get().unwrap();
+
         VMThread {
             status: FINISHED(None),
-            stack: Default::default()
+            stack: Default::default(),
+            PRINT_TRACE: VM.args.read().unwrap().print_trace
         }
     }
 
@@ -98,10 +103,7 @@ impl VMThread {
         let class = &*class;
         let method = &class.data.methods[method];
 
-        let VM = VM_HANDLER.get().unwrap();
-        let PRINT_TRACE = VM.args.read().unwrap().print_trace;
-
-        if PRINT_TRACE {
+        if self.PRINT_TRACE {
             println!("{}:{} {:?}", class.data.name, method.name, method.descriptor);
         }
 
@@ -204,7 +206,7 @@ impl VMThread {
         }
     }
 
-    #[inline]
+    #[inline(always)]
     fn interpreter_loop(&mut self, class: &Class, code: &Code, result: &mut Option<u64>) ->
                                                                                InstructionResult {
         use Instruction::*;
@@ -214,9 +216,8 @@ impl VMThread {
         let instruction = Instruction::from_primitive(instr);
 
         let VM = VM_HANDLER.get().unwrap();
-        let PRINT_TRACE = VM.args.read().unwrap().print_trace;
 
-        if PRINT_TRACE {
+        if self.PRINT_TRACE {
             println!("{}: {:?}", frame.pc, instruction);
         }
 
@@ -613,6 +614,23 @@ impl VMThread {
                     frame.pc += instruction_length(instruction);
                 }
             }
+            if_acmpeq | if_acmpne => {
+                let offset = i16::from_be_bytes(code.code[frame.pc + 1..frame.pc + 3].try_into()
+                    .unwrap()) as isize;
+                let b = frame.pop() as i32;
+                let a = frame.pop() as i32;
+
+                let cmp = match instruction {
+                    if_acmpeq => a == b,
+                    if_acmpne => a != b,
+                    _ => panic!()
+                };
+                if cmp {
+                    frame.pc = (frame.pc as isize + offset) as usize;
+                } else {
+                    frame.pc += instruction_length(instruction);
+                }
+            }
             goto => {
                 let offset = i16::from_be_bytes(code.code[frame.pc + 1..frame.pc + 3].try_into()
                     .unwrap()) as isize;
@@ -640,6 +658,15 @@ impl VMThread {
                 match *entry {
                     CPEntry::ResolvedSymbolicReference(FieldReference(class, false, index))
                     => {
+                        match initialize_class(class) {
+                            Ok(_) => {}
+                            Err(e) => {
+                                let ptr = create_throwable("java/lang/Error", self);
+                                *result = Some(ptr.to_val());
+                                return Exception;
+                            }
+                        }
+
                         frame.push(class.data.static_fields[index].load(Ordering::Relaxed));
                     }
                     _ => panic!("Unexpected pattern: {:?}", entry)
@@ -655,6 +682,15 @@ impl VMThread {
                 match *entry {
                     CPEntry::ResolvedSymbolicReference(FieldReference(class, false, index))
                     => {
+                        match initialize_class(class) {
+                            Ok(_) => {}
+                            Err(e) => {
+                                let ptr = create_throwable("java/lang/Error", self);
+                                *result = Some(ptr.to_val());
+                                return Exception;
+                            }
+                        }
+
                         class.data.static_fields[index].store(frame.pop(), Ordering::Relaxed);
                     }
                     _ => panic!("Unexpected pattern: {:?}", entry)
@@ -733,7 +769,7 @@ impl VMThread {
                             }
                         }
                     }
-                    _ => panic!()
+                    _ => panic!("{:?}", entry)
                 }
             }
             invokespecial => {
@@ -750,7 +786,7 @@ impl VMThread {
 
                         let res = invoke_special(*other_class, method).unwrap();
 
-                        let res = self.method(res, 1);
+                        let res = self.method(res, method.descriptor.parameters.len() + 1);
                         match res {
                             Ok(_) => {}
                             Err(obj) => {
@@ -771,6 +807,15 @@ impl VMThread {
 
                 match entry {
                     CPEntry::ResolvedSymbolicReference(MethodReference(other_class, index)) => {
+                        match initialize_class(*other_class) {
+                            Ok(_) => {}
+                            Err(e) => {
+                                let ptr = create_throwable("java/lang/Error", self);
+                                *result = Some(ptr.to_val());
+                                return Exception;
+                            }
+                        }
+
                         let method = &other_class.data.methods[*index];
                         assert!(method.is_static());
 
@@ -787,6 +832,46 @@ impl VMThread {
                     _ => panic!()
                 }
             }
+            invokeinterface => {
+                let index = u16::from_be_bytes(code.code[frame.pc + 1..frame.pc + 3].try_into()
+                    .unwrap());
+
+                resolve(ClassRef::new(class), index as usize);
+                let entry = class.get_cp_entry(index as usize);
+
+                match entry {
+                    CPEntry::ResolvedSymbolicReference(MethodReference(other_class, index)) => {
+                        let method = &other_class.data.methods[*index];
+
+                        let arg_no = method.descriptor.parameters.len();
+
+                        let obj = frame.peek_nth(arg_no);
+                        let obj = match ObjectPtr::from_val(obj) {
+                            None => {
+                                let npe = create_throwable("java/lang/NullPointerException", self);
+
+                                *result = Some(npe.to_val());
+                                return InstructionResult::Exception;
+                            }
+                            Some(obj) => obj
+                        };
+                        let obj_class = obj.get_class();
+
+                        let res = invoke_virtual(obj_class, *other_class, (*other_class, *index))
+                            .unwrap();
+
+                        let res = self.method(res, arg_no + 1);
+                        match res {
+                            Ok(_) => {}
+                            Err(obj) => {
+                                *result = Some(obj.to_val());
+                                return InstructionResult::Exception
+                            }
+                        }
+                    }
+                    _ => panic!("{:?}", entry)
+                }
+            }
             new => {
                 let index = u16::from_be_bytes(code.code[frame.pc + 1..frame.pc + 3].try_into()
                     .unwrap());
@@ -798,6 +883,16 @@ impl VMThread {
                     CPEntry::ResolvedSymbolicReference(
                         SymbolicReference::ClassReference(other_class)) => {
                         // TODO: It should not be an abstract class
+
+                        match initialize_class(other_class) {
+                            Ok(_) => {}
+                            Err(e) => {
+                                let ptr = create_throwable("java/lang/Error", self);
+                                *result = Some(ptr.to_val());
+                                return Exception;
+                            }
+                        }
+
                         let object = VM.object_arena.new_object(other_class);
                         frame.push(object.ptr as u64);
                     }
@@ -861,7 +956,7 @@ impl VMThread {
             breakpoint | impdep1 | impdep2 => todo!("Instruction {} not yet implemented", instr),
         }
 
-        if PRINT_TRACE {
+        if self.PRINT_TRACE {
             for i in 0..self.stack.len() {
                 println!("{:?}", self.stack[i]);
             }
