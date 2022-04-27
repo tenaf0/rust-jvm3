@@ -13,6 +13,7 @@ use crate::vm::class::field::Field;
 use crate::vm::class::method::{Method, MethodDescriptor};
 use crate::vm::object::{ObjectHeader, ObjectPtr};
 use crate::vm::thread::thread::MethodRef;
+use crate::VM_HANDLER;
 
 #[derive(Debug, PartialEq)]
 pub enum ClassState {
@@ -35,6 +36,19 @@ pub struct Class {
 impl Class {
     pub fn is_interface(&self) -> bool {
         has_flag(self.data.flag, AccessFlagClass::ACC_INTERFACE)
+    }
+
+    pub fn is_subclass(&self, other: ClassRef) -> bool {
+        let vm = VM_HANDLER.get().unwrap();
+        if ClassRef::new(self) == other || other == vm.object_class {
+            return true;
+        }
+
+        if !self.data.superclass.0.is_null() {
+            return self.data.superclass.is_subclass(other);
+        }
+
+        false
     }
 
     pub fn find_method(&self, name: &str, descriptor: &MethodDescriptor) -> Option<MethodRef> {
@@ -60,12 +74,26 @@ unsafe impl Send for Class {}
 
 impl Class {
     pub fn get_cp_entry(&self, index: usize) -> &CPEntry {
-        unsafe { &*self.data.constant_pool[index - 1].get() }
+        unsafe { &*self.data.constant_pool[index - 1].entry.get() }
     }
 
     pub fn set_cp_entry(&self, index: usize, value: CPEntry) {
-        // TODO: Create VM-wide lock for this
-        unsafe { *self.data.constant_pool[index - 1].get() = value; }
+        let _ = self.header.lock.lock().unwrap();
+
+        unsafe { *self.data.constant_pool[index - 1].entry.get() = value; }
+    }
+}
+
+#[derive(Debug)]
+pub struct CPEntryWrapper {
+    entry: UnsafeCell<CPEntry>
+}
+
+impl CPEntryWrapper {
+    pub fn new(entry: &CPEntry) -> CPEntryWrapper {
+        CPEntryWrapper {
+            entry: UnsafeCell::new(entry.clone())
+        }
     }
 }
 
@@ -76,7 +104,7 @@ pub struct ClassRepr {
     // TODO: class_loader: ObjectRef,
     pub superclass: ClassRef,
     pub interfaces: SmallVec<[ClassRef; 32]>,
-    pub constant_pool: Vec<UnsafeCell<CPEntry>>, // TODO: make private
+    pub constant_pool: Vec<CPEntryWrapper>,
     pub fields: Vec<Field>,
     pub methods: Vec<Method>,
     // TODO: attributes
@@ -119,5 +147,15 @@ mod tests {
         let _vm = VM_HANDLER.get_or_init(| | VM::vm_init(false));
 
         assert_eq!("java/lang", _vm.object_class.get_package().1);
+    }
+
+    #[test]
+    fn test_subclass_method() {
+        let _vm = VM_HANDLER.get_or_init(| | VM::vm_init(false));
+
+        let string = _vm.load_class("java/lang/String").unwrap();
+        let object = _vm.load_class("java/lang/Object").unwrap();
+
+        assert!(string.is_subclass(object));
     }
 }

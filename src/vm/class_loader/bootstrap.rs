@@ -12,7 +12,7 @@ use crate::class_parser::parse_class;
 use crate::class_parser::types::ParsedClass;
 use crate::class_parser::constants::CPTag;
 use crate::helper::{ftou2, has_flag};
-use crate::vm::class::class::{ClassRef, ClassState};
+use crate::vm::class::class::{ClassRef, ClassState, CPEntryWrapper};
 use crate::vm::class::constant_pool::{CPEntry, UnresolvedReference};
 use crate::vm::class::constant_pool::CPEntry::{ConstantString, ConstantValue, UnresolvedSymbolicReference};
 use crate::vm::class::field::{Field, FieldType};
@@ -432,11 +432,23 @@ impl VM {
                     }
 
                     let exception_handlers = handler.iter().map(|(a,b,c,d)| {
+                        let catch_type = if *d == 0 { None } else {
+                            let index = get_cp_info!(parsed_class, *d,
+                                CPTag::Class, CPInfo::Class(num), *num).expect("Class_info \
+                                structure was expected");
+                            let exception_name = get_cp_info!(parsed_class, index, CPTag::Utf8,
+                                CPInfo::Utf8(str), str).expect("Utf8_info structure was expected");
+
+                            let vm = VM_HANDLER.get().unwrap().load_class(exception_name).unwrap();
+
+                            Some(vm)
+                        };
+
                         ExceptionHandler {
                             start_pc: *a as usize,
                             end_pc: *b as usize,
                             handler_pc: *c as usize,
-                            catch_type: None // TODO
+                            catch_type
                         }
                     }).collect();
 
@@ -507,8 +519,8 @@ impl VM {
 
         let mut constant_pool = vec![];
         VM::load_cp_entries(&parsed_class, &mut constant_pool)?;
-        let constant_pool: Vec<UnsafeCell<CPEntry>> = constant_pool.iter().map(|e|
-            UnsafeCell::new(e.clone())).collect();
+        let constant_pool: Vec<CPEntryWrapper> = constant_pool.iter()
+            .map(CPEntryWrapper::new).collect();
 
         let this_class = get_cp_info!(parsed_class, parsed_class.this_class, CPTag::Class,
             CPInfo::Class(num), *num)?;

@@ -74,5 +74,5 @@ fn main() {
 
     vm.stop();
     let elapsed = now.elapsed();
-    println!("Elapsed: {:.2?}", elapsed);
+    eprintln!("Elapsed: {:.2?}", elapsed);
 }

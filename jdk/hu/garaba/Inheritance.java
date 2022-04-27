@@ -1,6 +1,6 @@
 package hu.garaba;
 
-public class Virtual {
+public class Inheritance {
 	public static void main(String[] args) {
 		A a = new A();
 		A ab = new B();

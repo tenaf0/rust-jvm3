@@ -147,19 +147,21 @@ impl VMThread {
                         }
 
                         if let Some(obj) = result {
-                            // TODO: Exception handling
                             let mut frame = self.stack.last_mut().unwrap();
+
+                            let obj = ObjectPtr::from_val(obj).unwrap();
+
                             for h in &code.exception_handlers {
-                                if h.start_pc <= frame.pc && frame.pc < h.end_pc {
+                                if h.start_pc <= frame.pc && frame.pc < h.end_pc &&
+                                    (h.catch_type.is_none()
+                                        || obj.get_class().is_subclass(h.catch_type.unwrap())) {
                                     frame.pc = h.handler_pc;
 
                                     frame.clear_stack();
-                                    frame.push(obj);
+                                    frame.push(obj.to_val());
                                     continue 'outer;
                                 }
                             }
-
-                            let obj = ObjectPtr::from_val(obj).unwrap();
 
                             // Exception bubbles up
                             self.stack.pop();

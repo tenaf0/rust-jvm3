@@ -45,7 +45,7 @@ public class PrimeGenerator {
 	}
 
 	public static void main(String[] args) {
-		for (int i = 0; i < 10; i++) {
+		for (int i = 0; i < 3; i++) {
 			init();
 			System.out.println(calc());
 		}

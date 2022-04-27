@@ -11,7 +11,7 @@ package hu.garaba;
 
 public final class nbody {
 	public static void main(String[] args) {
-		int n = 500000;
+		int n = 100000;
 
 		NBodySystem bodies = new NBodySystem();
 		System.out.println(bodies.energy());

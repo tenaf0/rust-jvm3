@@ -70,7 +70,7 @@ impl ObjectArena {
 
         let ptr = unsafe { self.arena.offset(offset as isize ) };
         let mut header: *mut ObjectHeader = ptr.cast();
-        unsafe { *header = ObjectHeader::new(class.ptr()); }
+        unsafe { header.write(ObjectHeader::new(class.ptr())); }
         header = unsafe { header.offset(1)};
 
         let field_ptr: *mut AtomicU64 = header.cast();

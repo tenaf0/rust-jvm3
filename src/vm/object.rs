@@ -1,6 +1,7 @@
 
 use std::ptr::{null, null_mut};
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Mutex;
 use crate::Class;
 use crate::vm::class::class::ClassRef;
 
@@ -108,18 +109,27 @@ impl ObjectPtr {
     }
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Debug)]
 // #[repr(align(64))]
 pub struct ObjectHeader {
     pub class: *const Class,
-    dummy_data: u32
+    pub lock: Mutex<()>
+}
+
+impl Clone for ObjectHeader {
+    fn clone(&self) -> Self {
+        Self {
+            class: self.class,
+            lock: Default::default()
+        }
+    }
 }
 
 impl ObjectHeader {
     pub fn new(ptr: *const Class) -> ObjectHeader {
         ObjectHeader {
             class: ptr,
-            dummy_data: 0
+            lock: Default::default()
         }
     }
 }
@@ -128,7 +138,7 @@ impl Default for ObjectHeader {
     fn default() -> Self {
         ObjectHeader {
             class: null(),
-            dummy_data: 0
+            lock: Default::default()
         }
     }
 }

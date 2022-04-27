@@ -80,11 +80,11 @@ impl VM {
     }
 
     pub fn stop(&self) {
-        println!("\n\n\nVM stats: ");
-        println!("Loaded {} classes", self.bootstrap_cl_class_list.lock().unwrap().len());
-        println!("Object arena allocated {} bytes of object",
+        eprintln!("\n\n\nVM stats: ");
+        eprintln!("Loaded {} classes", self.bootstrap_cl_class_list.lock().unwrap().len());
+        eprintln!("Object arena allocated {} bytes of object",
                  self.object_arena.last_index.load(Ordering::Relaxed));
-        println!("String pool has {} block(s) of data and has {} strings interned",
+        eprintln!("String pool has {} block(s) of data and has {} strings interned",
                  self.string_pool.buffers.read().unwrap().len(),
                  self.string_pool.interned_string.read().unwrap().len());
     }
