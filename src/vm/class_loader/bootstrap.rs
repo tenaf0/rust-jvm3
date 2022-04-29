@@ -23,7 +23,7 @@ use crate::vm::class_loader::native::{init_native_store, NATIVE_FN_STORE, Native
 use crate::vm::object::ObjectPtr;
 use crate::vm::pool::string::StrArena;
 
-use crate::vm::thread::thread::ThreadStatus;
+use crate::vm::thread::thread::{create_throwable, create_throwable_message, ThreadStatus};
 use crate::vm::thread::thread::ThreadStatus::FINISHED;
 
 const INITIAL_CLASS_BUFFER_SIZE: usize = 1024;
@@ -159,7 +159,8 @@ impl VM {
                             match res {
                                 Ok(val) => Some(val.ptr() as u64),
                                 Err(e) => {
-                                    *exc = Some(e);
+                                    *exc = Some(create_throwable_message("java/lang/Exception",
+                                                                         thread, &e));
                                     None
                                 }
                             }
@@ -201,7 +202,47 @@ impl VM {
                         descriptor: FieldType::J
                     }
                 ],
-                methods: vec![],
+                methods: vec![
+                    Method {
+                        flag: AccessFlagMethod::ACC_PUBLIC as u16,
+                        name: "concat".to_string(),
+                        descriptor: MethodDescriptor {
+                            parameters: vec![FieldType::L("java/lang/String".to_string())],
+                            ret: FieldType::L("java/lang/String".to_string()) },
+                        repr: MethodRepr::Native(NativeMethod {
+                            fn_ptr: |thread, args, exc| {
+                                let a = match ObjectPtr::from_val(args[0]) {
+                                    None => {
+                                        *exc = Some(
+                                            create_throwable("java/lang/NullPointerException",
+                                                           thread));
+                                        return None;
+                                    }
+                                    Some(val) => val
+                                };
+                                let b = match ObjectPtr::from_val(args[1]) {
+                                    None => {
+                                        *exc = Some(
+                                            create_throwable("java/lang/NullPointerException",
+                                                             thread));
+                                        return None;
+                                    }
+                                    Some(val) => val
+                                };
+
+                                let b_length = b.get_field(0);
+                                if b_length == 0 {
+                                    return Some(a.to_val());
+                                }
+
+                                let VM = VM_HANDLER.get().unwrap();
+                                let res = StrArena::get_string(a) + &StrArena::get_string(b);
+                                let res = VM.string_pool.add_string(&res);
+                                Some(res.to_val())
+                            }
+                        })
+                    }
+                ],
                 static_fields: Default::default(),
                 instance_field_count: 2
             }

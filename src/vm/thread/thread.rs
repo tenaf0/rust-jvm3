@@ -78,7 +78,12 @@ impl VMThread {
                 use std::io::Write;
 
                 let mut buf: Vec<u8> = Vec::with_capacity(200);
-                let _ = write!(&mut buf, "Exception {}\n", obj.get_class().data.name);
+                let message = match ObjectPtr::from_val(obj.get_field(1)) {
+                    None => "".to_string(),
+                    Some(val) => StrArena::get_string(val)
+                };
+
+                let _ = write!(&mut buf, "Exception {}: {}\n", obj.get_class().data.name, message);
 
                 let array = ObjectPtr::from_val(obj.get_field(0)).unwrap();
                 let length = array.get_field(0);
@@ -188,7 +193,7 @@ impl VMThread {
                 let fn_ptr = native_method.fn_ptr;
                 let prev_frame = self.stack.last_mut().unwrap();
                 let args = prev_frame.pop_args(arg_no);
-                let mut exception: Option<String> = None;
+                let mut exception: Option<ObjectPtr> = None;
                 let frame = Frame::new(method_ref, 0, 0);
                 self.stack.push(frame);
                 let res = fn_ptr(self, args, &mut exception);
@@ -196,7 +201,9 @@ impl VMThread {
 
                 let prev_frame = self.stack.last_mut().unwrap();
                 match (res, &exception) {
-                    (_, Some(e)) => panic!("Exception occured: {:?}", e),
+                    (_, Some(e)) => {
+                        return Err(*e);
+                    },
                     (Some(res), _)  => prev_frame.push(res),
                     (None, _) if method.descriptor.ret != FieldType::V =>
                         panic!("Method {:?} should return a value!", method),
@@ -280,7 +287,7 @@ impl VMThread {
                     _ => panic!("Unexpected entry {:?}", entry)
                 }
             }
-            ldc2_w => {
+            ldc_w | ldc2_w => {
                 let val = u16::from_be_bytes(code.code[frame.pc + 1..frame.pc + 3].try_into()
                     .unwrap());
 
@@ -343,6 +350,11 @@ impl VMThread {
                 let val = frame.get_s(index as usize);
                 frame.push(val as u64);
             }
+            lload => {
+                let index = code.code[frame.pc + 1];
+                let val = frame.get_d(index as usize);
+                frame.push(val);
+            }
             fload => {
                 let index = code.code[frame.pc + 1];
                 let val = frame.get_d(index as usize);
@@ -365,6 +377,10 @@ impl VMThread {
             lload_0 | lload_1 | lload_2 | lload_3 => {
                 let val = frame.get_d(instr as usize - 30);
                 frame.push(val);
+            }
+            fload_0 | fload_1 | fload_2 | fload_3 => {
+                let val = frame.get_s(instr as usize - 43);
+                frame.push(val as u64);
             }
             dload_0 | dload_1 | dload_2 | dload_3 => {
                 let val = frame.get_d(instr as usize - 38);
@@ -526,6 +542,13 @@ impl VMThread {
                 let res = a * b;
                 frame.push(ftou2(res));
             }
+            idiv => {
+                let b = frame.pop() as i32;
+                let a = frame.pop() as i32;
+
+                let res = a / b;
+                frame.push(res as u64);
+            }
             ddiv => {
                 let b = utof2(frame.pop());
                 let a = utof2(frame.pop());
@@ -543,6 +566,13 @@ impl VMThread {
             dneg => {
                 let a = utof2(frame.pop());
                 frame.push(ftou2(-a));
+            }
+            ishl => {
+                let b = frame.pop() as i32;
+                let a = frame.pop() as i32;
+
+                let b = b & 31;
+                frame.push((a << b) as u64);
             }
             iinc => {
                 let index = code.code[frame.pc + 1] as usize;
@@ -831,7 +861,7 @@ impl VMThread {
                             }
                         }
                     }
-                    _ => panic!()
+                    _ => panic!("Unexpected CPEntry: {:?}", entry)
                 }
             }
             invokeinterface => {
@@ -1017,9 +1047,13 @@ fn invoke_virtual(class: ClassRef, resolved_class: ClassRef, method_ref: MethodR
     // TODO: Maximally specific superinterface
 }
 
-fn create_throwable(name: &str, thread: &VMThread) -> ObjectPtr {
+pub fn create_throwable(name: &str, thread: &VMThread) -> ObjectPtr {
+    create_throwable_message(name, thread, "")
+}
+
+pub fn create_throwable_message(name: &str, thread: &VMThread, message: &str) -> ObjectPtr {
     let VM = VM_HANDLER.get().unwrap();
-    let class= VM.load_class(name).unwrap();
+    let class= VM.load_class(name).expect(&format!("Non-existing exception name: {}", name));
     let obj = VM.object_arena.new_object(class);
 
     let mut init_thread = VMThread::new();
@@ -1051,6 +1085,11 @@ fn create_throwable(name: &str, thread: &VMThread) -> ObjectPtr {
     }
 
     obj.put_field(0, array.to_val());
+
+    if !message.is_empty() {
+        let string = VM.string_pool.intern_string(message);
+        obj.put_field(1, string.to_val());
+    }
 
     obj
 }

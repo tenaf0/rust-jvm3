@@ -18,6 +18,7 @@ public final class TestSuite {
 		tests.add(new Test("nbody", List.of("hu.garaba.nbody")));
 		tests.add(new Test("Inheritance", List.of("hu.garaba.Inheritance")));
 		tests.add(new Test("Exception", List.of("hu.garaba.Exception")));
+		tests.add(new Test("BinaryTree", List.of("hu.garaba.BinaryTree", "10")));
 
 		var successfulTests = 0;
 

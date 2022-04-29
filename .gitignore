@@ -1,2 +1,7 @@
 /target
 jdk/target
+test/*.class
+stat.txt
+flamegraph.svg
+*.iml
+.idea

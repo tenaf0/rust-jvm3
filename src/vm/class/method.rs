@@ -4,6 +4,7 @@ use crate::class_parser::constants::AccessFlagMethod;
 use crate::{ClassRef, VMThread};
 use crate::helper::has_flag;
 use crate::vm::class::field::FieldType;
+use crate::vm::object::ObjectPtr;
 
 #[derive(Debug, PartialEq, Eq, Hash, Clone)]
 pub struct MethodDescriptor {
@@ -67,7 +68,7 @@ pub struct JvmMethod {
 pub const MAX_NO_OF_ARGS: usize = 64;
 
 pub type NativeFnPtr = fn(&VMThread, SmallVec<[u64; MAX_NO_OF_ARGS]>,
-                          exception: &mut Option<String>) -> Option<u64>;
+                          exception: &mut Option<ObjectPtr>) -> Option<u64>;
 
 pub struct NativeMethod {
     pub fn_ptr: NativeFnPtr
