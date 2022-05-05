@@ -146,6 +146,7 @@ impl Default for ObjectHeader {
 unsafe impl Sync for ObjectHeader {}
 unsafe impl Send for ObjectHeader {}
 
+#[cfg(test)]
 mod tests {
     use crate::{VM, VM_HANDLER};
 

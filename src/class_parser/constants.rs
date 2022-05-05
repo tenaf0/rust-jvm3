@@ -23,6 +23,7 @@ pub enum CPTag {
     Package = 20,
 }
 
+#[allow(non_snake_case)]
 pub fn tag_to_U2_constructor(tag: CPTag) -> fn(U2) -> CPInfo {
     match tag {
         CPTag::Class => CPInfo::Class,
@@ -34,6 +35,7 @@ pub fn tag_to_U2_constructor(tag: CPTag) -> fn(U2) -> CPInfo {
     }
 }
 
+#[allow(non_snake_case)]
 pub fn tag_to_U4_constructor(tag: CPTag) -> fn(U4) -> CPInfo {
     match tag {
         CPTag::Integer => CPInfo::Integer,
@@ -42,6 +44,7 @@ pub fn tag_to_U4_constructor(tag: CPTag) -> fn(U4) -> CPInfo {
     }
 }
 
+#[allow(non_snake_case)]
 pub fn tag_to_2U2_constructor(tag: CPTag) -> fn(U2, U2) -> CPInfo {
     match tag {
         CPTag::Fieldref => CPInfo::Fieldref,
@@ -54,6 +57,7 @@ pub fn tag_to_2U2_constructor(tag: CPTag) -> fn(U2, U2) -> CPInfo {
     }
 }
 
+#[allow(non_snake_case)]
 pub fn tag_to_2U4_constructor(tag: CPTag) -> fn(U4, U4) -> CPInfo {
     match tag {
         CPTag::Long => CPInfo::Long,

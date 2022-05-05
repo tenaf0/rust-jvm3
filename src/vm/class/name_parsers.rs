@@ -90,6 +90,7 @@ impl FieldType {
     }
 }
 
+#[cfg(test)]
 mod tests {
     use crate::vm::class::field::FieldType::*;
     use crate::vm::class::method::MethodDescriptor;

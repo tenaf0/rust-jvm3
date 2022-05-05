@@ -1,5 +1,5 @@
 use smallvec::smallvec;
-use crate::{Class, ClassRef, FieldType, initialize_class, ThreadStatus, VM_HANDLER, VmArgs, VMThread};
+use crate::{Class, ClassRef, FieldType, initialize_class, ThreadStatus, VM_HANDLER, VMThread};
 use crate::vm::object::ObjectPtr;
 
 pub fn start_main_class() {

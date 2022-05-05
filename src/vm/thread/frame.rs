@@ -1,7 +1,6 @@
 use std::fmt::{Debug, Formatter};
 use std::mem::MaybeUninit;
 use smallvec::{SmallVec};
-use crate::ClassRef;
 use crate::vm::class::method::MAX_NO_OF_ARGS;
 use crate::vm::thread::thread::MethodRef;
 
@@ -113,6 +112,7 @@ impl Frame {
     }
 }
 
+#[cfg(test)]
 mod test {
     use std::ptr::null;
     use crate::ClassRef;

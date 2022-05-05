@@ -1,16 +1,11 @@
 use std::alloc;
 use std::alloc::Layout;
 use std::collections::HashMap;
-use std::mem::MaybeUninit;
-use std::pin::Pin;
 use std::sync::atomic::{AtomicUsize, Ordering};
-
 use std::sync::RwLock;
-use crate::{ObjectHeader, VM_HANDLER};
-use crate::vm::object::ObjectPtr;
 
-const STRING_FIELD_COUNT: usize = 1;
-const STRING_POOL_BUFFER_SIZE: usize = 10;
+use crate::VM_HANDLER;
+use crate::vm::object::ObjectPtr;
 
 #[derive(Debug)]
 pub struct StringPool {
@@ -131,33 +126,4 @@ impl StrArena {
         let str = Vec::from(str);
         String::from_utf8(str).unwrap()
     }
-}
-
-mod tests {
-    use std::sync::atomic::Ordering;
-    use crate::{VM, VM_HANDLER};
-    use crate::vm::pool::string::{STRING_POOL_BUFFER_SIZE, StringPool};
-
-    /*#[test]
-    fn add_string() {
-        let _vm = VM_HANDLER.get_or_init(VM::init);
-
-        let pool = StringPool { buffers: Default::default(), interned_string: Default::default() };
-
-        let ptr1 = pool.intern_string("string1");
-        assert_eq!(pool.pool.read().unwrap().len(), 1);
-
-        let ptr2 = pool.add_string("string2");
-        let index = ptr2.get_field(0);
-        assert_eq!(pool.pool.read().unwrap().len(), 2);
-        assert_eq!(&*pool.get(index as usize), "string2");
-
-        let ptr3 = pool.intern_string("string1");
-        assert_eq!(pool.pool.read().unwrap().len(), 2);
-        assert_eq!(pool.interned_string.read().unwrap().len(), 1);
-        assert_eq!(ptr1.ptr, ptr3.ptr);
-
-        let index = ptr3.get_field(0);
-        assert_eq!(&*pool.get(index as usize), "string1");
-    }*/
 }

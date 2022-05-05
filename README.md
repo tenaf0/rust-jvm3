@@ -13,7 +13,7 @@ Issue the following command in the root of the project:
 cargo build --release
 ```
 
-And then go to the `jdk` folder and issue `make` to compile the java.base module and some example programs.
+And then go to the `jdk` folder and issue `make` to compile the `java.base` module and some example programs.
 
 ## Running
 

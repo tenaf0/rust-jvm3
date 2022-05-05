@@ -98,7 +98,7 @@ impl VM {
                         descriptor: MethodDescriptor { parameters: vec![],
                             ret: FieldType::L("java/lang/String".to_string()) },
                         repr: MethodRepr::Native(NativeMethod {
-                            fn_ptr: |thread, args, exc| {
+                            fn_ptr: |_, args, _| {
                                 let this = ObjectPtr::from_val(args[0]).unwrap();
                                 let class_name = &this.get_class().data.name;
 
@@ -234,9 +234,9 @@ impl VM {
                                     return Some(a.to_val());
                                 }
 
-                                let VM = VM_HANDLER.get().unwrap();
+                                let vm = VM_HANDLER.get().unwrap();
                                 let res = StrArena::get_string(a) + &StrArena::get_string(b);
-                                let res = VM.string_pool.add_string(&res);
+                                let res = vm.string_pool.add_string(&res);
                                 Some(res.to_val())
                             }
                         })

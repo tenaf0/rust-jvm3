@@ -102,8 +102,8 @@ pub fn resolve(class: ClassRef, index: usize) -> Result<(), Exception> {
 
             Ok(())
         },
-        UnresolvedSymbolicReference(method @ InterfaceMethodReference(class_index, name,
-            descriptor))
+        UnresolvedSymbolicReference(method @ InterfaceMethodReference(class_index, _name,
+            _descriptor))
         => {
             resolve(class, *class_index as usize)?;
 

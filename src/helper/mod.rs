@@ -31,6 +31,7 @@ pub fn ftou2(f: f64) -> u64 {
     unsafe { *ptr }
 }
 
+#[cfg(test)]
 mod test {
     use crate::helper::{ftou2, utof2};
 

@@ -170,8 +170,8 @@ impl Deref for ClassRef {
 unsafe impl Sync for ClassRef {}
 unsafe impl Send for ClassRef {}
 
+#[cfg(test)]
 mod tests {
-    use std::sync::atomic::Ordering;
     use crate::{VM, VM_HANDLER};
 
     #[test]

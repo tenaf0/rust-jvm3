@@ -12,7 +12,7 @@ use crate::vm::class_loader::resolve::initialize_class;
 use crate::vm::instructions::Instruction;
 use crate::vm::object::ObjectHeader;
 use crate::vm::thread::thread::{ThreadStatus, VMThread};
-use crate::vm::vm::{VM, VmArgs};
+use crate::vm::vm::{VM};
 
 mod class_parser;
 mod vm;
@@ -61,8 +61,9 @@ fn main() {
                 }
 
                 let b = vm.instr_map[i].load(Ordering::Relaxed) as f64;
-                write!(&mut buf, "{:?}, {}\n", Instruction::from_primitive(i as u8), (arr[i] as f64) / b);
-                file.write(&buf);
+                let _ = write!(&mut buf, "{:?}, {}\n", Instruction::from_primitive(i as u8), (arr[i]
+                    as f64) / b);
+                let _ = file.write(&buf);
                 buf.truncate(0);
             }
         }));
@@ -74,11 +75,11 @@ fn main() {
         start_main_class();
     });
 
-    handle.join();
+    let _ = handle.join();
     vm.last_instruction.store(Instruction::impdep1 as u8, Ordering::Release);
     match stat_thread_handle {
         None => {},
-        Some(handle) => { handle.join(); }
+        Some(handle) => { let _ = handle.join(); }
     }
 
     vm.stop();
