@@ -1,8 +1,6 @@
 use std::alloc;
 use std::alloc::Layout;
-
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
-use std::sync::Mutex;
 use crate::{ClassRef, ObjectHeader};
 use crate::vm::object::ObjectPtr;
 
@@ -34,7 +32,7 @@ impl ObjectArena {
     }
 
     pub fn new() -> Self {
-        const SIZE: usize = 1000 * 1024;
+        const SIZE: usize = 100 * 1000 * 1024;
 
         let layout = Layout::array::<AtomicU64>(SIZE).unwrap();
         let ptr = unsafe { alloc::alloc(layout) } as *mut AtomicU64;

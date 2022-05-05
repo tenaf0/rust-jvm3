@@ -23,8 +23,6 @@ pub type MethodRef = (ClassRef, usize);
 
 const STACK_SIZE: usize = 36;
 
-pub const ENABLE_STATS: bool = true;
-
 #[derive(Debug)]
 pub enum ThreadStatus {
     RUNNING,
@@ -35,7 +33,7 @@ pub enum ThreadStatus {
 pub struct VMThread {
     pub status: ThreadStatus,
     pub stack: SmallVec<[Frame; STACK_SIZE]>,
-    PRINT_TRACE: bool
+    print_trace: bool
 }
 
 impl VMThread {
@@ -45,7 +43,7 @@ impl VMThread {
         VMThread {
             status: FINISHED(None),
             stack: Default::default(),
-            PRINT_TRACE: VM.args.read().unwrap().print_trace
+            print_trace: VM.args.read().unwrap().print_trace
         }
     }
 
@@ -108,7 +106,7 @@ impl VMThread {
         let class = &*class;
         let method = &class.data.methods[method];
 
-        if self.PRINT_TRACE {
+        if self.print_trace {
             println!("{}:{} {:?}", class.data.name, method.name, method.descriptor);
         }
 
@@ -190,6 +188,12 @@ impl VMThread {
                 Ok(())
             }
             MethodRepr::Native(native_method) => {
+                if cfg!(feature = "statistics") {
+                    let VM = VM_HANDLER.get().unwrap();
+                    VM.last_instruction.store(Instruction::impdep2 as u8, Ordering::Relaxed);
+                    VM.instr_map[Instruction::impdep2 as usize].fetch_add(1, Ordering::Relaxed);
+                }
+
                 let fn_ptr = native_method.fn_ptr;
                 let prev_frame = self.stack.last_mut().unwrap();
                 let args = prev_frame.pop_args(arg_no);
@@ -226,12 +230,13 @@ impl VMThread {
 
         let VM = VM_HANDLER.get().unwrap();
 
-        if self.PRINT_TRACE {
+        if self.print_trace {
             println!("{}: {:?}", frame.pc, instruction);
         }
 
-        if ENABLE_STATS {
-            VM.last_instruction.store(instr, Ordering::Release);
+        if cfg!(feature = "statistics") {
+            VM.last_instruction.store(instr, Ordering::Relaxed);
+            VM.instr_map[instr as usize].fetch_add(1, Ordering::Relaxed);
         }
 
         match instruction {
@@ -988,7 +993,7 @@ impl VMThread {
             breakpoint | impdep1 | impdep2 => todo!("Instruction {} not yet implemented", instr),
         }
 
-        if self.PRINT_TRACE {
+        if self.print_trace {
             for i in 0..self.stack.len() {
                 println!("{:?}", self.stack[i]);
             }

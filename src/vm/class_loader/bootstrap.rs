@@ -1,9 +1,7 @@
-use std::cell::UnsafeCell;
 use std::fs::File;
 use std::io::Read;
 use std::path::PathBuf;
 use std::ptr::{null};
-use std::sync::{Mutex};
 use std::sync::atomic::AtomicU64;
 use smallvec::{smallvec, SmallVec};
 use crate::{Class, ClassRepr, get_cp_info, Method, ObjectHeader, VM, VM_HANDLER, VMThread};
@@ -12,7 +10,8 @@ use crate::class_parser::parse_class;
 use crate::class_parser::types::ParsedClass;
 use crate::class_parser::constants::CPTag;
 use crate::helper::{ftou2, has_flag};
-use crate::vm::class::class::{ClassRef, ClassState, CPEntryWrapper};
+use crate::vm::class::class::{AtomicClassState, ClassRef, CPEntryWrapper};
+use crate::vm::class::class::ClassState::{Ready, Verified};
 use crate::vm::class::constant_pool::{CPEntry, UnresolvedReference};
 use crate::vm::class::constant_pool::CPEntry::{ConstantString, ConstantValue, UnresolvedSymbolicReference};
 use crate::vm::class::field::{Field, FieldType};
@@ -47,7 +46,7 @@ impl VM {
         let object_name = "java/lang/Object".to_string();
         let object_class_data = Class {
             header: ObjectHeader::default(),
-            state: Mutex::new(ClassState::Ready),
+            state: AtomicClassState::new(Ready),
             data: ClassRepr {
                 name: object_name.clone(),
                 flag: 0,
@@ -129,7 +128,7 @@ impl VM {
         let classloader_name = "java/lang/ClassLoader".to_string();
         let classloader_class_data = Class {
             header: ObjectHeader::default(),
-            state: Mutex::new(ClassState::Ready),
+            state: AtomicClassState::new(Ready),
             data: ClassRepr {
                 name: classloader_name.clone(),
                 flag: 0,
@@ -183,7 +182,7 @@ impl VM {
         let string_name = "java/lang/String".to_string();
         let string_class_data = Class {
             header: ObjectHeader::default(),
-            state: Mutex::new(ClassState::Ready),
+            state: AtomicClassState::new(Ready),
             data: ClassRepr {
                 name: string_name.clone(),
                 flag: 0,
@@ -290,7 +289,7 @@ impl VM {
 
         let classpath = self.args.read().unwrap();
         let classpath = classpath.classpath.as_ref().map(|s| s.as_str())
-            .unwrap_or("jdk/target");
+            .unwrap_or(".");
         let mut file = find_class_file(name, classpath)?;
         let mut buf = Vec::with_capacity(INITIAL_CLASS_BUFFER_SIZE);
         file.read_to_end(&mut buf).map_err(|e| e.to_string())?;
@@ -313,7 +312,7 @@ impl VM {
 
         let class = Class {
             header: Default::default(),
-            state: Mutex::new(ClassState::Verified),
+            state: AtomicClassState::new(Verified),
             data: ClassRepr {
                 name: name.to_string(),
                 flag: component_class.data.flag,
@@ -604,7 +603,7 @@ impl VM {
 
         let class = Class {
             header: ObjectHeader::default(),
-            state: Mutex::new(ClassState::Verified), // TODO: Verification before giving this state
+            state: AtomicClassState::new(Verified), // TODO: Verification before giving this state
             data: ClassRepr {
                 name: class_name.clone(),
                 flag: parsed_class.access_flags,

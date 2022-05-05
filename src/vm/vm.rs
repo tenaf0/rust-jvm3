@@ -1,8 +1,7 @@
 use std::collections::HashMap;
-use std::fs::File;
 use std::pin::Pin;
 use std::ptr::null;
-use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicU8, Ordering};
 use std::sync::{Mutex, RwLock};
 
 use clap::Parser;
@@ -29,12 +28,13 @@ pub struct VM {
     pub classloader: ClassRef,
     pub string_class: ClassRef,
 
-    pub stat_file: Mutex<Option<File>>,
     pub last_instruction: AtomicU8,
+    // #[cfg(feature = "statistics")]
+    pub instr_map: [AtomicU64; 256]
 }
 
 #[derive(Parser, Debug)]
-#[clap(version, about)]
+#[clap(about)]
 pub struct VmArgs {
     #[clap(long = "cp")]
     pub classpath: Option<String>,
@@ -51,6 +51,8 @@ impl VM {
     }
 
     pub fn vm_init(parse_args: bool) -> VM {
+        const ZERO: AtomicU64 = AtomicU64::new(0);
+
         let mut vm = VM {
             args: RwLock::new(if parse_args { VmArgs::parse() } else { VmArgs {
                 classpath: None,
@@ -66,8 +68,8 @@ impl VM {
             object_class: ClassRef::new(null()),
             classloader: ClassRef::new(null()),
             string_class: ClassRef::new(null()),
-            stat_file: Mutex::new(None),
-            last_instruction: AtomicU8::new(0)
+            last_instruction: AtomicU8::new(0),
+            instr_map: [ZERO; 256]
         };
 
         vm.load_bootstrap_classes();

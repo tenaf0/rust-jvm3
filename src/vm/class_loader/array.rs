@@ -1,8 +1,7 @@
-use std::fmt::format;
 use std::ptr::null;
-use std::sync::Mutex;
 use crate::{Class, ClassRef, ClassRepr, ObjectHeader};
-use crate::vm::class::class::ClassState;
+use crate::vm::class::class::AtomicClassState;
+use crate::vm::class::class::ClassState::Ready;
 use crate::vm::class::field::FieldType;
 
 pub fn create_primitive_array_class(component: FieldType) -> Option<Class> {
@@ -13,7 +12,7 @@ pub fn create_primitive_array_class(component: FieldType) -> Option<Class> {
 
     Some(Class {
         header: ObjectHeader::default(),
-        state: Mutex::new(ClassState::Ready),
+        state: AtomicClassState::new(Ready),
         data: ClassRepr {
             name: format!("[{:?}", component),
             flag: 0,

@@ -28,33 +28,42 @@ fn main() {
     let vm = VM_HANDLER.get_or_init(VM::init);
 
     let stat_thread_handle;
-    if vm::thread::thread::ENABLE_STATS {
+    if cfg!(feature = "statistics") {
         // Start statistic thread
         stat_thread_handle = Some(std::thread::spawn(|| {
             use num_enum::FromPrimitive;
 
             let vm = VM_HANDLER.get().unwrap();
-            let mut file = vm.stat_file.lock().unwrap();
-            if file.is_none() {
-                *file = Some(File::options().write(true).create(true).truncate(true)
-                    .open("stat.txt")
-                    .unwrap());
-            }
 
-            let file = file.as_mut().unwrap();
+            let mut arr = [0; 256];
 
             loop {
-                let instruction = vm.last_instruction.load(Ordering::Acquire);
-                let instruction = Instruction::from_primitive(instruction);
+                let instr = vm.last_instruction.load(Ordering::Acquire);
+                let instruction = Instruction::from_primitive(instr);
                 if instruction == Instruction::impdep1 {
-                    return;
+                    break;
                 }
 
-                let mut buf = Vec::with_capacity(16);
-                write!(&mut buf, "{:?}\n", instruction);
-                file.write(&buf);
+                arr[instr as usize] += 1;
 
-                std::thread::sleep(Duration::from_millis(7));
+                std::thread::sleep(Duration::from_millis(1));
+            }
+
+            let mut file = File::options().write(true).create(true).truncate(true)
+                .open("stat.txt")
+                .unwrap();
+
+            let mut buf = Vec::with_capacity(64);
+
+            for i in 1..256 {
+                if arr[i] == 0 {
+                    continue;
+                }
+
+                let b = vm.instr_map[i].load(Ordering::Relaxed) as f64;
+                write!(&mut buf, "{:?}, {}\n", Instruction::from_primitive(i as u8), (arr[i] as f64) / b);
+                file.write(&buf);
+                buf.truncate(0);
             }
         }));
     } else {

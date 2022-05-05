@@ -1,8 +1,8 @@
-use std::thread;
 use smallvec::smallvec;
 use crate::{Class, ClassRef, VM_HANDLER, VMThread};
 use crate::ThreadStatus::{FAILED, FINISHED};
 use crate::vm::class::class::ClassState;
+use crate::vm::class::class::ClassState::{Initializing, Ready, Verified};
 use crate::vm::class::constant_pool::{CPEntry, SymbolicReference, UnresolvedReference};
 
 use crate::vm::class::constant_pool::UnresolvedReference::{ClassReference, FieldReference, InterfaceMethodReference, MethodReference};
@@ -187,16 +187,17 @@ fn resolve_interface_method(class: ClassRef, method: &UnresolvedReference) -> Re
 
 pub fn initialize_class(class: ClassRef) -> Result<(), Exception> {
     {
-        let class_state = &mut *class.state.lock().unwrap();
-        if class_state == &ClassState::Ready ||
-            class_state == &ClassState::Initializing(thread::current().id()) {
+        let class_state = class.state.get();
+        if class_state == ClassState::Ready || class_state == ClassState::Initializing {
             return Ok(());
-        } else if class_state != &ClassState::Verified {
+        } else if class_state != ClassState::Verified {
             return Err(format!("Class '{}' should be in state Verified at initialization but it was \
-        {:?}", class.data.name, class_state));
+                {:?}", class.data.name, class_state));
         }
 
-        *class_state = ClassState::Initializing(thread::current().id());
+        if let Err(_) = class.state.set_from(Verified, Initializing) {
+            return Ok(()); // Other thread does the initialization
+        }
     }
 
 
@@ -225,7 +226,7 @@ pub fn initialize_class(class: ClassRef) -> Result<(), Exception> {
             thread.start((class, i), smallvec![]);
 
             match thread.status {
-                FINISHED(_) => *class.state.lock().unwrap() = ClassState::Ready,
+                FINISHED(_) => class.state.set(Ready),
                 FAILED(e) => return Err(e),
                 _ => panic!()
             }

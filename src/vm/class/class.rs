@@ -1,10 +1,8 @@
 use std::cell::UnsafeCell;
-use std::fmt::{Debug};
-
+use std::fmt::{Debug, Formatter};
+use num_enum::{FromPrimitive};
 use std::ops::Deref;
-use std::sync::{Mutex};
-use std::sync::atomic::AtomicU64;
-use std::thread::ThreadId;
+use std::sync::atomic::{AtomicU64, AtomicU8, Ordering};
 use smallvec::SmallVec;
 use crate::class_parser::constants::AccessFlagClass;
 use crate::helper::has_flag;
@@ -15,22 +13,56 @@ use crate::vm::object::{ObjectHeader, ObjectPtr};
 use crate::vm::thread::thread::MethodRef;
 use crate::VM_HANDLER;
 
-#[derive(Debug, PartialEq)]
+#[derive(FromPrimitive, Debug, PartialEq)]
+#[repr(u8)]
 pub enum ClassState {
-    Loaded,
-    Verified,
-    Initializing(ThreadId),
-    Ready
+    Loaded = 0,
+    Verified = 1,
+    Initializing = 2,
+    #[default]
+    Ready = 3,
+}
+
+pub struct AtomicClassState {
+    pub state: AtomicU8
+}
+
+impl AtomicClassState {
+    pub fn new(state: ClassState) -> AtomicClassState {
+        AtomicClassState {
+            state: AtomicU8::new(state as u8)
+        }
+    }
+
+    pub fn get(&self) -> ClassState {
+        let state = self.state.load(Ordering::Acquire);
+
+        ClassState::from_primitive(state as u8)
+    }
+
+    pub fn set(&self, state: ClassState) {
+        self.state.store(state as u8, Ordering::Release);
+    }
+
+    pub fn set_from(&self, from: ClassState, to: ClassState) -> Result<(), ()> {
+        self.state.compare_exchange(from as u8, to as u8, Ordering::Release, Ordering::Relaxed)
+            .map(|_| ()).map_err(|_| ())
+    }
 }
 
 /// Runtime representation of a class in the method area, which is simultaneously has a correct
 /// Object layout, so that Java objects can reference it (in Object::getClass for example)
-#[derive(Debug)]
 #[repr(C)]
 pub struct Class {
     pub header: ObjectHeader,
-    pub state: Mutex<ClassState>,
+    pub state: AtomicClassState,
     pub data: ClassRepr,
+}
+
+impl Debug for Class {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "[{:?}]{:?}", self.state.get(), self.data)
+    }
 }
 
 impl Class {
