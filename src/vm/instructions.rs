@@ -93,11 +93,14 @@ pub enum Instruction {
     lrem = 113,
     dneg = 119,
     ishl = 120,
+    ixor = 130,
     iinc = 132,
     i2l = 133,
     l2i = 136,
     l2d = 138,
     f2d = 141,
+    i2b = 145,
+    i2c = 146,
     lcmp = 148,
     ifeq = 153,
     ifne = 154,
@@ -105,6 +108,7 @@ pub enum Instruction {
     ifge = 156,
     ifgt = 157,
     ifle = 158,
+    if_icmpeq = 159,
     if_icmpge = 162,
     if_icmpgt = 163,
     if_acmpeq = 165,
@@ -128,6 +132,8 @@ pub enum Instruction {
     anewarray = 189,
     arraylength = 190,
     athrow = 191,
+    checkcast = 192,
+    instanceof = 193,
     breakpoint = 202,
     impdep1 = 254,
     #[default]
@@ -203,13 +209,16 @@ pub const fn instruction_length(instr: Instruction) -> usize {
         lrem => 1,
         dneg => 1,
         ishl => 1,
+        ixor => 1,
         iinc => 3,
         i2l => 1,
         l2i => 1,
         l2d => 1,
         f2d => 1,
+        i2b => 1,
+        i2c => 1,
         lcmp => 1,
-        ifeq | ifne | iflt | ifge | ifgt | ifle | if_icmpge | if_icmpgt => 3,
+        ifeq | ifne | iflt | ifge | ifgt | ifle | if_icmpeq | if_icmpge | if_icmpgt => 3,
         if_acmpeq | if_acmpne => 3,
         goto => 3,
         ireturn => 1,
@@ -230,66 +239,10 @@ pub const fn instruction_length(instr: Instruction) -> usize {
         anewarray => 3,
         arraylength => 1,
         athrow => 1,
+        checkcast => 3,
+        instanceof => 3,
         breakpoint => 1,
         impdep1 => 1,
         impdep2 => 1
     }
 }
-
-/*
-#[inline]
-pub fn execute_roots_only(frame: &mut Frame, code: &[u8]) {
-    use Instruction::*;
-
-    let instr = code[0];
-    let instr = Instruction::try_from(instr).unwrap();
-    match instr {
-        aconst_null => frame.push(1),
-        iconst_m1 | iconst_0 | iconst_1 | iconst_2 | iconst_3 | iconst_4 | iconst_5 => {
-            frame.push(0);
-        }
-        lconst_0 | lconst_1 => {
-            frame.push(0);
-        }
-        bipush | sipush => frame.push(0),
-        ldc => frame.push(0), // TODO: It could be a String reference as well
-        ldc2_w => frame.push(0),
-        iload_0 | iload_1 | iload_2 | iload_3 => frame.push(0),
-        lload_0 | lload_1 | lload_2 => frame.push(0),
-        aload_0 | aload_1 | aload_2 | aload_3 => todo!(),
-        istore => {}
-        istore_0 => {}
-        istore_1 => {}
-        istore_2 => {}
-        istore_3 => {}
-        lstore_0 => {}
-        lstore_1 => {}
-        lstore_2 => {}
-        astore_0 | astore_1 | astore_2 | astore_3 => {
-            // TODO
-        }
-        dup => {
-            frame.push(frame.safe_peek().unwrap());
-        }
-        iadd => {}
-        ladd => {}
-        isub => { frame.pop(); frame.pop(); }
-        imul => { frame.pop(); },
-        iinc => {}
-        i2l => {}
-        l2i => {}
-        if_icmpge | if_icmpgt => { frame.pop(); frame.pop(); }
-        goto => {}
-        lreturn => {}
-        _return => {}
-        getstatic => {}, // TODO: Depends on field type
-        putstatic => { frame.pop(); }
-        getfield => {} // TODO: Depends on method
-        putfield => {
-            frame.pop();
-            frame.pop();
-        } // TODO: Depends on method
-        invokespecial => {} // TODO: Depends on method
-        new => frame.push(1)
-    }
-}*/

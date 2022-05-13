@@ -6,4 +6,8 @@ public class Boolean {
 	public Boolean(boolean value) {
 		this.value = value;
 	}
+
+	public static String toString(boolean bool) {
+		return bool ? "true" : "false";
+	}
 }

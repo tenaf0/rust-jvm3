@@ -188,7 +188,30 @@ impl VM {
                 flag: 0,
                 superclass: object_class,
                 interfaces: Default::default(),
-                constant_pool: vec![],
+                constant_pool: vec![
+                    CPEntryWrapper::new(&UnresolvedSymbolicReference(
+                            UnresolvedReference::ClassReference("java/lang/String".to_string())
+                        )),
+                    CPEntryWrapper::new(&UnresolvedSymbolicReference(
+                            UnresolvedReference::FieldReference(1, "length".to_string(),
+                                                                FieldType::J)
+                        )),
+                    CPEntryWrapper::new(&UnresolvedSymbolicReference(
+                        UnresolvedReference::ClassReference("java/lang/StringUtil".to_string())
+                    )),
+                    CPEntryWrapper::new(&UnresolvedSymbolicReference(
+                        UnresolvedReference::MethodReference(3,
+                                                             "stringEquals".to_string(),
+                                                            MethodDescriptor {
+                                                                parameters: vec![
+                                                                    FieldType::L("java/lang/String".to_string()),
+                                                                    FieldType::L("java/lang/Object".to_string()),
+                                                                ],
+                                                                ret: FieldType::Z
+                                                            }
+                        )
+                    )),
+                ],
                 fields: vec![
                     Field {
                         flag: 0,
@@ -208,7 +231,7 @@ impl VM {
                         descriptor: MethodDescriptor {
                             parameters: vec![FieldType::L("java/lang/String".to_string())],
                             ret: FieldType::L("java/lang/String".to_string()) },
-                        repr: MethodRepr::Native(NativeMethod {
+                        repr: Native(NativeMethod {
                             fn_ptr: |thread, args, exc| {
                                 let a = match ObjectPtr::from_val(args[0]) {
                                     None => {
@@ -240,6 +263,62 @@ impl VM {
                                 Some(res.to_val())
                             }
                         })
+                    },
+                    Method {
+                        flag: AccessFlagMethod::ACC_PUBLIC as u16,
+                        name: "length".to_string(),
+                        descriptor: MethodDescriptor { parameters: vec![], ret: FieldType::J },
+                        repr: MethodRepr::Jvm(JvmMethod { code: Some(Code {
+                            max_stack: 1,
+                            max_locals: 1,
+                            code: vec![
+                                42, // aload_0
+                                180, 0, 2, // getfield #2
+                                173 // lreturn
+                            ],
+                            exception_handlers: vec![]
+                        }) })
+                    },
+                    Method {
+                        flag: AccessFlagMethod::ACC_PUBLIC as u16,
+                        name: "charAt".to_string(),
+                        descriptor: MethodDescriptor { parameters: vec![FieldType::I],
+                            ret: FieldType::C },
+                        repr: Native(NativeMethod {
+                            fn_ptr: |thread, args, exc| {
+                                let string = ObjectPtr::from_val(args[0]).unwrap();
+                                let index = args[1] as i32;
+
+                                let str = StrArena::get_string(string);
+
+                                match str.encode_utf16().nth(index as usize) {
+                                    None => {
+                                        *exc = Some(
+                                            create_throwable("java/lang/ArrayIndexOutOfBoundsException", thread));
+
+                                        None
+                                    }
+                                    Some(val) => Some(val as u64)
+                                }
+                            }
+                        })
+                    },
+                    Method {
+                        flag: AccessFlagMethod::ACC_PUBLIC as u16,
+                        name: "equals".to_string(),
+                        descriptor: MethodDescriptor { parameters: vec![FieldType::L
+                            ("java/lang/Object".to_string())], ret: FieldType::Z },
+                        repr: MethodRepr::Jvm(JvmMethod { code: Some(Code {
+                            max_stack: 2,
+                            max_locals: 2,
+                            code: vec![
+                                42, // aload_0
+                                43, // aload_1
+                                184, 0, 4, // invokestatic #2
+                                172 // ireturn
+                            ],
+                            exception_handlers: vec![]
+                        }) })
                     }
                 ],
                 static_fields: Default::default(),

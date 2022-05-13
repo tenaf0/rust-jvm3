@@ -24,7 +24,7 @@ impl StringPool {
                 buffers.push(StrArena::new());
                 drop(buffers);
 
-                println!("Creating new StrArena");
+                eprintln!("Creating new StrArena");
                 self.add_string(value)
             }
             Some(res) => {

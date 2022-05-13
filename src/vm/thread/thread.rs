@@ -7,7 +7,7 @@ use crate::class_parser::constants::{AccessFlagMethod};
 use crate::helper::{ftou2, has_flag, utof, utof2};
 use crate::vm::class::class::ClassRef;
 use crate::vm::class::constant_pool::{CPEntry, SymbolicReference};
-use crate::vm::class::constant_pool::SymbolicReference::{FieldReference, MethodReference};
+use crate::vm::class::constant_pool::SymbolicReference::{ClassReference, FieldReference, MethodReference};
 use crate::vm::class::field::FieldType;
 use crate::vm::class::method::{Code, MAX_NO_OF_ARGS, MethodDescriptor, MethodRepr};
 use crate::vm::class_loader::resolve::resolve;
@@ -579,6 +579,12 @@ impl VMThread {
                 let b = b & 31;
                 frame.push((a << b) as u64);
             }
+            ixor => {
+                let b = frame.pop() as i32;
+                let a = frame.pop() as i32;
+
+                frame.push((a ^ b) as u64);
+            }
             iinc => {
                 let index = code.code[frame.pc + 1] as usize;
                 let cons = code.code[frame.pc + 2] as i8;
@@ -601,6 +607,16 @@ impl VMThread {
                 let val = utof(frame.pop() as u32);
 
                 frame.push(ftou2(val as f64));
+            }
+            i2b => {
+                let val = frame.pop() as i32;
+
+                frame.push(val as i8 as i32 as u64)
+            }
+            i2c => {
+                let val = frame.pop() as i32;
+
+                frame.push(val as u16 as i32 as u64)
             }
             lcmp => {
                 let b = frame.pop() as i64;
@@ -634,13 +650,14 @@ impl VMThread {
                     frame.pc += instruction_length(instruction);
                 }
             }
-            if_icmpge | if_icmpgt => {
+            if_icmpeq | if_icmpge | if_icmpgt => {
                 let offset = i16::from_be_bytes(code.code[frame.pc + 1..frame.pc + 3].try_into()
                     .unwrap()) as isize;
                 let b = frame.pop() as i32;
                 let a = frame.pop() as i32;
 
                 let cmp = match instruction {
+                    if_icmpeq => a == b,
                     if_icmpge => a >= b,
                     if_icmpgt => a > b,
                     _ => panic!()
@@ -989,6 +1006,63 @@ impl VMThread {
 
                 *result = Some(obj.to_val());
                 return InstructionResult::Exception
+            }
+            checkcast => {
+                let index = u16::from_be_bytes(code.code[frame.pc + 1..frame.pc + 3].try_into()
+                    .unwrap());
+
+                let object = frame.peek_nth(0);
+                match ObjectPtr::from_val(object) {
+                    None => {},
+                    Some(object) => {
+                        let _ = resolve(ClassRef::new(class), index as usize);
+
+                        let entry = class.get_cp_entry(index as usize);
+
+                        match *entry {
+                            CPEntry::ResolvedSymbolicReference(ClassReference(other_class)) => {
+                                if object.get_class().is_subclass(other_class) {
+                                } else {
+                                    // TODO: Array, interface implementation
+
+                                    let obj = create_throwable_message("java/lang/Exception",
+                                                     self, "ClassCastException: ");
+
+                                    *result = Some(obj.to_val());
+                                    return InstructionResult::Exception;
+                                }
+                            }
+                            _ => panic!("Unexpected pattern {:?}", entry)
+                        }
+                    }
+                }
+            }
+
+            instanceof => {
+                let index = u16::from_be_bytes(code.code[frame.pc + 1..frame.pc + 3].try_into()
+                    .unwrap());
+
+                let object = frame.pop();
+                match ObjectPtr::from_val(object) {
+                    None => frame.push(0),
+                    Some(object) => {
+                        let _ = resolve(ClassRef::new(class), index as usize);
+
+                        let entry = class.get_cp_entry(index as usize);
+
+                        match *entry {
+                            CPEntry::ResolvedSymbolicReference(ClassReference(other_class)) => {
+                                if object.get_class().is_subclass(other_class) {
+                                    frame.push(1);
+                                } else {
+                                    // TODO: Array, interface implementation
+                                    frame.push(0);
+                                }
+                            }
+                            _ => panic!("Unexpected pattern {:?}", entry)
+                        }
+                    }
+                }
             }
             breakpoint | impdep1 | impdep2 => todo!("Instruction {} not yet implemented", instr),
         }

@@ -38,7 +38,7 @@ public class Exception {
 			try {
 				System.out.println(pair.a());
 			} catch (NullPointerException e) {
-				System.out.println(null);
+				System.out.println("null");
 			}
 		}
 	}

@@ -10,8 +10,8 @@ import java.util.stream.Collectors;
 public final class TestSuite {
 	public static void main(String[] args) {
 		var runners = new ArrayList<TestRunner>();
-		runners.add(new CmdRunner(List.of("target/release/rust-jvm3")));
-		runners.add(new CmdRunner(List.of("java", "-cp", "jdk/target")));
+		runners.add(new CmdRunner(List.of("target/release/rust-jvm3", "--cp", "jdk/target", "--")));
+		runners.add(new CmdRunner(List.of("java", "-cp", "jdk/target_JDK")));
 
 		var tests = new ArrayList<Test>();
 		tests.add(new Test("Prime test", List.of("hu.garaba.PrimeGenerator")));
@@ -19,6 +19,12 @@ public final class TestSuite {
 		tests.add(new Test("Inheritance", List.of("hu.garaba.Inheritance")));
 		tests.add(new Test("Exception", List.of("hu.garaba.Exception")));
 		tests.add(new Test("BinaryTree", List.of("hu.garaba.BinaryTree", "10")));
+		tests.add(new Test("AnimalFarm", List.of("hu.garaba.puzzlers.AnimalFarm")));
+		tests.add(new Test("DosEquis", List.of("hu.garaba.puzzlers.DosEquis")));
+		tests.add(new Test("LongDivision", List.of("hu.garaba.puzzlers.LongDivision")));
+		tests.add(new Test("Multicast", List.of("hu.garaba.puzzlers.Multicast", "-1")));
+		tests.add(new Test("Multicast 2", List.of("hu.garaba.puzzlers.Multicast", "-255")));
+		tests.add(new Test("Swap", List.of("hu.garaba.puzzlers.Swap")));
 
 		var successfulTests = 0;
 

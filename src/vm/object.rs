@@ -9,7 +9,7 @@ use crate::vm::class::class::ClassRef;
 /// Points to a variable length struct having the following data layout:
 /// struct Object {
 ///     header: ObjectHeader,
-///     data: [u64, FIELD_NO]
+///     data: [AtomicU64, FIELD_NO]
 /// }
 #[derive(Copy, Clone, Debug, PartialEq)]
 #[repr(transparent)]

@@ -94,5 +94,5 @@ pub struct Code {
     pub max_locals: usize,
     pub code: Vec<u8>,
     pub exception_handlers: Vec<ExceptionHandler>
-    // TODO: exception table, attributes
+    // TODO: attributes
 }

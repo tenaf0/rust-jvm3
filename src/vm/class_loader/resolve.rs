@@ -64,37 +64,13 @@ pub fn resolve(class: ClassRef, index: usize) -> Result<(), Exception> {
 
             match class.get_cp_entry(*class_index as usize) {
                 ResolvedSymbolicReference(SymbolicReference::ClassReference(other_class)) => {
-                    let mut instance_count = 0;
-                    let mut static_count = 0;
+                    let res = resolve_field(*other_class, name, descriptor);
 
-                    let mut field= None;
-
-                    for f in &other_class.data.fields {
-                        if &f.name == name && &f.descriptor == descriptor {
-                            field = Some(f);
-                            break;
+                    match res {
+                        Ok(res) => {
+                            class.set_cp_entry(index, ResolvedSymbolicReference(res));
                         }
-
-                        if f.is_static() {
-                            static_count += 1;
-                        } else {
-                            instance_count += 1;
-                        }
-                    }
-
-                    match field {
-                        None => panic!("Could not find field"),
-                        Some(field) => {
-                            let field_index = if field.is_static() {
-                                static_count
-                            } else {
-                                instance_count + other_class.data.superclass.data.instance_field_count
-                            };
-                            class.set_cp_entry(index, ResolvedSymbolicReference(
-                                SymbolicReference::FieldReference(*other_class, !field.is_static(), field_index)));
-
-                            // TODO: Recursive lookup
-                        }
+                        Err(exc) => panic!("{}", exc)
                     }
                 }
                 _ => panic!()
@@ -181,6 +157,48 @@ fn resolve_interface_method(class: ClassRef, method: &UnresolvedReference) -> Re
             Err(format!("No interface method found: {:?}", method))
         }
         _ => panic!()
+    }
+}
+
+fn resolve_field(class: ClassRef, name: &str, descriptor: &FieldType) -> Result<SymbolicReference,
+    Exception> {
+    let mut instance_count = 0;
+    let mut static_count = 0;
+
+    let mut field= None;
+
+    for f in &class.data.fields {
+        if &f.name == name && &f.descriptor == descriptor {
+            field = Some(f);
+            break;
+        }
+
+        if f.is_static() {
+            static_count += 1;
+        } else {
+            instance_count += 1;
+        }
+    }
+
+    return match field {
+        None => {
+            if !class.data.superclass.ptr().is_null() {
+                resolve_field(class.data.superclass, name, descriptor)
+            } else {
+                Err(format!("Couldn't find field's reference {} in class {}", name,
+                            class.data.name))
+            }
+        },
+        Some(field) => {
+            let field_index = if field.is_static() {
+                static_count
+            } else {
+                instance_count + class.data.superclass.data.instance_field_count
+            };
+
+            Ok(SymbolicReference::FieldReference(class, !field.is_static(),
+                                                 field_index))
+        }
     }
 }
 
