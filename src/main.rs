@@ -39,7 +39,7 @@ fn main() {
 
             loop {
                 let instr = vm.last_instruction.load(Ordering::Acquire);
-                let instruction = Instruction::from_primitive(instr);
+                let instruction = unsafe { Instruction::from_unchecked(instr) };
                 if instruction == Instruction::impdep1 {
                     break;
                 }
@@ -61,8 +61,9 @@ fn main() {
                 }
 
                 let b = vm.instr_map[i].load(Ordering::Relaxed) as f64;
-                let _ = write!(&mut buf, "{:?}, {}\n", Instruction::from_primitive(i as u8), (arr[i]
-                    as f64) / b);
+                let _ = write!(&mut buf, "{:?}, {}\n",
+                               unsafe { Instruction::from_unchecked(i as u8) },
+                               (arr[i] as f64) / b);
                 let _ = file.write(&buf);
                 buf.truncate(0);
             }

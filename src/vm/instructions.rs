@@ -1,4 +1,6 @@
-use num_enum::{FromPrimitive};
+use num_enum::{UnsafeFromPrimitive};
+use strum::IntoEnumIterator;
+use strum_macros::EnumIter;
 
 pub enum InstructionResult {
     Continue,
@@ -6,8 +8,7 @@ pub enum InstructionResult {
     Exception
 }
 
-//UnsafeFromPrimitive
-#[derive(FromPrimitive, Debug, Copy, Clone, PartialEq)]
+#[derive(UnsafeFromPrimitive, EnumIter, Debug, Copy, Clone, PartialEq)]
 #[repr(u8)]
 #[allow(non_camel_case_types)]
 pub enum Instruction {
@@ -60,6 +61,7 @@ pub enum Instruction {
     iaload = 46,
     aaload = 50,
     istore = 54,
+    lstore = 55,
     dstore = 57,
     astore = 58,
     istore_0 = 59,
@@ -69,6 +71,7 @@ pub enum Instruction {
     lstore_0 = 63,
     lstore_1 = 64,
     lstore_2 = 65,
+    lstore_3 = 66,
     dstore_0 = 71,
     dstore_1 = 72,
     dstore_2 = 73,
@@ -87,8 +90,10 @@ pub enum Instruction {
     isub = 100,
     dsub = 103,
     imul = 104,
+    lmul = 105,
     dmul = 107,
     idiv = 108,
+    ldiv = 109,
     ddiv = 111,
     lrem = 113,
     dneg = 119,
@@ -136,8 +141,19 @@ pub enum Instruction {
     instanceof = 193,
     breakpoint = 202,
     impdep1 = 254,
-    #[default]
-    impdep2 = 255
+    impdep2 = 255,
+}
+
+impl Instruction {
+    pub fn exists(code: u8) -> bool {
+        for i in Instruction::iter() {
+            if i as u8 == code {
+                return true;
+            }
+        }
+
+        false
+    }
 }
 
 #[inline(always)]
@@ -182,6 +198,7 @@ pub const fn instruction_length(instr: Instruction) -> usize {
         iaload => 1,
         aaload => 1,
         istore => 2,
+        lstore => 2,
         dstore => 2,
         astore => 2,
         istore_0 => 1,
@@ -191,6 +208,7 @@ pub const fn instruction_length(instr: Instruction) -> usize {
         lstore_0 => 1,
         lstore_1 => 1,
         lstore_2 => 1,
+        lstore_3 => 1,
         dstore_0 | dstore_1 | dstore_2 | dstore_3 => 1,
         astore_0 | astore_1 | astore_2 | astore_3 => 1,
         iastore => 1,
@@ -203,8 +221,10 @@ pub const fn instruction_length(instr: Instruction) -> usize {
         isub => 1,
         dsub => 1,
         imul => 1,
+        lmul => 1,
         dmul => 1,
         idiv => 1,
+        ldiv => 1,
         ddiv => 1,
         lrem => 1,
         dneg => 1,

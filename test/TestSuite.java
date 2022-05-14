@@ -5,18 +5,81 @@ import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.util.List;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.stream.Collectors;
 
 public final class TestSuite {
+
+
 	public static void main(String[] args) {
+		final boolean test = false;
+
+		if (test) {
+			integratationTest();
+		} else {
+			long start = 80000;
+			long step = 140000;
+
+			var times = new HashMap<Long, List<Double>>();
+
+			int i = 0;
+			final int stepNo = 20;
+			for (; i < stepNo; i++) {
+				System.out.printf("%d/%d\n\n", i, stepNo);
+				var result = benchmark(7, new Test("Collatz", List.of("hu.garaba.Collatz", "10000")),
+						new Test("Collatz", List.of("hu.garaba.Collatz", Long.toString(start))));
+				times.put(start, result);
+				start += step;
+			}
+
+			for (var entry : times.entrySet()) {
+				System.out.printf("%d, %f, %f, %f\n", entry.getKey(),
+						entry.getValue().get(0), entry.getValue().get(1), entry.getValue().get(2));
+			}
+		}
+	}
+	private static List<Double> benchmark(int n, Test warmupTest, Test test) {
+		final int warmup = 4;
+
+		var runners = new ArrayList<TestRunner>();
+		runners.add(new CmdRunner(List.of("target/release/rust-jvm3", "--cp", "jdk/target", "--"), true));
+		runners.add(new CmdRunner(List.of("java", "-cp", "jdk/target_JDK"), true));
+		runners.add(new CmdRunner(List.of("java", "-cp", "jdk/target_JDK", "-Djava.compiler=NONE"), true));
+
+		var times = new ArrayList<Double>();
+
+		for (var runner : runners) {
+			System.out.println(runner + " warming up");
+
+			for (int i = 0; i < warmup; i++) {
+				runner.run(warmupTest);
+			}
+
+			System.out.println("benchmark started");
+
+			long time = 0;
+			for (int i = 0; i < n; i++) {
+				var result = runner.run(test);
+				time += result.time();
+			}
+
+			double avg = time / 1e9 / n;
+			times.add(avg);
+			System.out.println("Finished execution on average in " + avg + "s");
+		}
+
+		return times;
+	}
+	private static void integratationTest() {
 		var runners = new ArrayList<TestRunner>();
 		runners.add(new CmdRunner(List.of("target/release/rust-jvm3", "--cp", "jdk/target", "--")));
 		runners.add(new CmdRunner(List.of("java", "-cp", "jdk/target_JDK")));
 
 		var tests = new ArrayList<Test>();
 		tests.add(new Test("Prime test", List.of("hu.garaba.PrimeGenerator")));
-		tests.add(new Test("nbody", List.of("hu.garaba.nbody")));
+		tests.add(new Test("nbody", List.of("hu.garaba.nbody", "100000")));
 		tests.add(new Test("Inheritance", List.of("hu.garaba.Inheritance")));
+		tests.add(new Test("Collatz", List.of("hu.garaba.Collatz", "10000")));
 		tests.add(new Test("Exception", List.of("hu.garaba.Exception")));
 		tests.add(new Test("BinaryTree", List.of("hu.garaba.BinaryTree", "10")));
 		tests.add(new Test("AnimalFarm", List.of("hu.garaba.puzzlers.AnimalFarm")));
@@ -66,7 +129,11 @@ interface TestRunner {
 	TestResult run(Test test);
 }
 
-final record CmdRunner(List<String> commands) implements TestRunner {
+final record CmdRunner(List<String> commands, boolean silent) implements TestRunner {
+	public CmdRunner(List<String> commands) {
+		this(commands, false);
+	}
+
 	public TestResult run(Test test) {
 		var command = new ArrayList<String>();
 		command.addAll(commands);
@@ -81,7 +148,11 @@ final record CmdRunner(List<String> commands) implements TestRunner {
 			try (var inputReader = new BufferedReader(new InputStreamReader(inputStream));
 					var errorReader = new BufferedReader(new InputStreamReader(errorStream))) {
 
-				String result = inputReader.lines().peek(s -> System.out.println(s)).collect(Collectors.joining("\n"));
+				String result = inputReader.lines().peek(s -> {
+					if (!silent)
+						System.out.println(s);
+				}).collect(Collectors.joining(
+						"\n"));
 				String error = errorReader.lines().collect(Collectors.joining("\n"));
 				return new TestResult(true, System.nanoTime() - now, result, error);
 			}

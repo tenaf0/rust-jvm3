@@ -32,7 +32,7 @@ impl ObjectArena {
     }
 
     pub fn new() -> Self {
-        const SIZE: usize = 100 * 1000 * 1024;
+        const SIZE: usize = 1000 * 1000 * 1024;
 
         let layout = Layout::array::<AtomicU64>(SIZE).unwrap();
         let ptr = unsafe { alloc::alloc(layout) } as *mut AtomicU64;

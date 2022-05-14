@@ -40,6 +40,14 @@ pub fn init_native_store() -> HashMap<NativeMethodRef, NativeFnPtr> {
         }}, lang::toString);
 
     native_store.insert(NativeMethodRef {
+        class_name: "java/lang/Long".to_string(),
+        method_name: "parseLong".to_string(),
+        descriptor: MethodDescriptor {
+            parameters: vec![FieldType::L("java/lang/String".to_string())],
+            ret: FieldType::J
+        }}, lang::parseLong);
+
+    native_store.insert(NativeMethodRef {
         class_name: "java/lang/Math".to_string(),
         method_name: "sqrt".to_string(),
         descriptor: MethodDescriptor {
@@ -98,6 +106,30 @@ mod lang {
     use crate::vm::object::ObjectPtr;
     use crate::vm::pool::string::StrArena;
     use crate::vm::thread::thread::{create_throwable, create_throwable_message};
+
+    #[allow(non_snake_case)]
+    pub fn parseLong(thread: &VMThread, args: SmallVec<[u64; MAX_NO_OF_ARGS]>,
+                    exception: &mut Option<ObjectPtr>) -> Option<u64> {
+        let string = match ObjectPtr::from_val(args[0]) {
+            None => {
+                *exception = Some(create_throwable("java/lang/NullPointerException", thread));
+                return None;
+            }
+            Some(val) => val
+        };
+
+        let string = StrArena::get_string(string);
+
+        match string.parse::<i64>() {
+            Ok(val) => Some(val as u64),
+            Err(e) => {
+                *exception = Some(create_throwable_message("java/lang/Exception", thread, // TODO: NumberFormatException
+                                                           &e.to_string()));
+                return None;
+            }
+        }
+    }
+
 
     #[allow(non_snake_case)]
     pub fn parseInt(thread: &VMThread, args: SmallVec<[u64; MAX_NO_OF_ARGS]>,

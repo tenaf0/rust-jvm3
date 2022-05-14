@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use std::ptr::{null};
 use std::sync::atomic::AtomicU64;
 use smallvec::{smallvec, SmallVec};
-use crate::{Class, ClassRepr, get_cp_info, Method, ObjectHeader, VM, VM_HANDLER, VMThread};
+use crate::{Class, ClassRepr, get_cp_info, Instruction, Method, ObjectHeader, VM, VM_HANDLER, VMThread};
 use crate::class_parser::constants::{AccessFlagMethod, CPInfo};
 use crate::class_parser::parse_class;
 use crate::class_parser::types::ParsedClass;
@@ -19,6 +19,7 @@ use crate::vm::class::method::{Code, ExceptionHandler, JvmMethod, MethodDescript
 use crate::vm::class::method::MethodRepr::Native;
 use crate::vm::class_loader::array::create_primitive_array_class;
 use crate::vm::class_loader::native::{init_native_store, NATIVE_FN_STORE, NativeMethodRef};
+use crate::vm::instructions::instruction_length;
 use crate::vm::object::ObjectPtr;
 use crate::vm::pool::string::StrArena;
 
@@ -529,6 +530,23 @@ impl VM {
                     let code_length = u32::from_be_bytes(a.info[4..8].try_into().unwrap()) as usize;
                     let mut code_buf = vec![0; code_length];
                     code_buf.clone_from_slice(&a.info[8..8+code_length]);
+
+                    let mut pc = 0;
+                    loop {
+                        if code_buf.len() < pc {
+                            panic!("Couldn't validate used instrucitons");
+                        } else if code_buf.len() == pc {
+                            break;
+                        }
+
+                        let instr = code_buf[pc];
+                        if Instruction::exists(instr) {
+                            let instruction = unsafe { Instruction::from_unchecked(instr) };
+                            pc += instruction_length(instruction);
+                        } else {
+                            panic!("Instruction {} is not yet implemented", code_buf[pc]);
+                        }
+                    }
 
                     let exception_start = 8+code_length;
                     let exception_table_length = u16::from_be_bytes(

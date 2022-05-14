@@ -6,6 +6,9 @@ public class PrintStream {
 	public native void print(long x);
 	public native void print(double x);
 	public native void print(String x);
+	public void print(Object x) {
+		print(x.toString());
+	}
 
 	public void println(int x) {
 		print(x);
@@ -23,6 +26,11 @@ public class PrintStream {
 	}
 
 	public void println(String x) {
+		print(x);
+		print('\n');
+	}
+
+	public void println(Object x) {
 		print(x);
 		print('\n');
 	}

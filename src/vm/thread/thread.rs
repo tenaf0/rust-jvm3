@@ -226,7 +226,7 @@ impl VMThread {
 
         let frame = self.stack.last_mut().unwrap();
         let instr = code.code[frame.pc];
-        let instruction = Instruction::from_primitive(instr);
+        let instruction = unsafe { Instruction::from_unchecked(instr) };
 
         let vm = VM_HANDLER.get().unwrap();
 
@@ -336,6 +336,11 @@ impl VMThread {
                 let index = code.code[frame.pc + 1];
                 frame.set_s(index as usize, val);
             }
+            lstore => {
+                let val = frame.pop();
+                let index = code.code[frame.pc + 1];
+                frame.set_d(index as usize, val);
+            }
             dstore => {
                 let val = frame.pop();
                 let index = code.code[frame.pc + 1];
@@ -423,7 +428,7 @@ impl VMThread {
                     }
                 }
             }
-            lstore_0 | lstore_1 | lstore_2  => {
+            lstore_0 | lstore_1 | lstore_2 | lstore_3  => {
                 let val = frame.pop();
 
                 frame.set_d(instr as usize - 63, val);
@@ -540,6 +545,13 @@ impl VMThread {
                 let (res, _) = a.overflowing_mul(b);
                 frame.push(res as u64);
             }
+            lmul => {
+                let b = frame.pop();
+                let a = frame.pop();
+
+                let (res, _) = a.overflowing_mul(b);
+                frame.push(res);
+            }
             dmul => {
                 let b = utof2(frame.pop());
                 let a = utof2(frame.pop());
@@ -553,6 +565,13 @@ impl VMThread {
 
                 let res = a / b;
                 frame.push(res as u64);
+            }
+            ldiv => {
+                let b = frame.pop();
+                let a = frame.pop();
+
+                let res = a / b;
+                frame.push(res);
             }
             ddiv => {
                 let b = utof2(frame.pop());

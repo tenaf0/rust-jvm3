@@ -6,4 +6,6 @@ public final class Long {
 	public Long(long value) {
 		this.value = value;
 	}
+
+	public static native long parseLong(String num);
 }
