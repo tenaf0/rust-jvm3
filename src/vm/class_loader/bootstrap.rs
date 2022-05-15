@@ -534,7 +534,7 @@ impl VM {
                     let mut pc = 0;
                     loop {
                         if code_buf.len() < pc {
-                            panic!("Couldn't validate used instrucitons");
+                            panic!("Couldn't validate used instructions");
                         } else if code_buf.len() == pc {
                             break;
                         }
