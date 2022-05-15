@@ -12,11 +12,18 @@ public final class TestSuite {
 
 
 	public static void main(String[] args) {
-		final boolean test = false;
+		boolean test = true;
+		boolean benchmark = false;
+
+		if (args.length > 0 && "benchmark".equals(args[0])) {
+			test = false;
+			benchmark = true;
+		}
 
 		if (test) {
 			integratationTest();
-		} else {
+		}
+		if (benchmark) {
 			long start = 80000;
 			long step = 140000;
 
@@ -39,7 +46,7 @@ public final class TestSuite {
 		}
 	}
 	private static List<Double> benchmark(int n, Test warmupTest, Test test) {
-		final int warmup = 4;
+		final int warmup = 3;
 
 		var runners = new ArrayList<TestRunner>();
 		runners.add(new CmdRunner(List.of("target/release/rust-jvm3", "--cp", "jdk/target", "--"), true));
